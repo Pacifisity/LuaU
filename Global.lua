@@ -11,7 +11,7 @@ local success, data = pcall(function()
 end)
 
 if not success or type(data) ~= 'table' then
-    warn('Failed to retrieve Games directory from GitHub.')
+    warn('Failed to retrieve scripts from GitHub.')
     return
 end
 
@@ -33,7 +33,7 @@ for _, item in ipairs(data) do
 end
 
 if not matchedScriptURL then
-    warn('No matching game script found for this game.')
+    warn('No script found for this game.')
     return
 end
 
@@ -43,9 +43,9 @@ local ok, loaded = pcall(function()
 end)
 
 if not ok or not loaded then
-    warn('Failed to load game script:', matchedScriptURL)
+    warn('Failed to load game script')
     return
 end
 
-print('Loaded game script:', matchedScriptURL)
+print('Loaded game script')
 loaded()
