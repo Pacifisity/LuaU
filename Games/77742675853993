@@ -21,11 +21,17 @@ local function tp(cf)
 end
 
 -------------------------------------------------------
--- AUTO CONFESSIONAL LOOP
+-- AUTO CONFESSIONAL LOOPS
 -------------------------------------------------------
 local autoPunish = false
 local punishThread = nil
 
+local autoForgive = false
+local forgiveThread = nil
+
+-------------------------------------------------------
+-- PUNISH LOOP
+-------------------------------------------------------
 local function runPunishLoop()
     punishThread = task.spawn(function()
         while autoPunish do
@@ -41,20 +47,61 @@ local function runPunishLoop()
                     if button.BrickColor == BrickColor.new('Really red') then
                         local click =
                             button:FindFirstChildWhichIsA('ClickDetector')
-
                         if click then
-                            -- teleport to button
                             tp(
                                 CFrame.new(
                                     button.Position - Vector3.new(0, 3, 0)
                                 )
                             )
-                            task.wait(0.25)
-
-                            fireclickdetector(click)
                             task.wait(0.1)
 
-                            -- return to original pos
+                            -- spam 100x
+                            for i = 1, 100 do
+                                fireclickdetector(click)
+                            end
+
+                            tp(originalCF)
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.15)
+        end
+    end)
+end
+
+-------------------------------------------------------
+-- FORGIVE LOOP
+-------------------------------------------------------
+local function runForgiveLoop()
+    forgiveThread = task.spawn(function()
+        while autoForgive do
+            local originalCF = getHrp().CFrame
+
+            for _, booth in ipairs(workspace.ConfessionalBooths:GetChildren()) do
+                if not autoForgive then
+                    break
+                end
+
+                local button = booth:FindFirstChild('forgiveButton')
+                if button and button:IsA('BasePart') then
+                    if button.BrickColor == BrickColor.new('Toothpaste') then
+                        local click =
+                            button:FindFirstChildWhichIsA('ClickDetector')
+                        if click then
+                            tp(
+                                CFrame.new(
+                                    button.Position - Vector3.new(0, 3, 0)
+                                )
+                            )
+                            task.wait(0.1)
+
+                            -- spam 100x
+                            for i = 1, 100 do
+                                fireclickdetector(click)
+                            end
+
                             tp(originalCF)
                         end
                     end
@@ -71,7 +118,6 @@ end
 -------------------------------------------------------
 local win = Sage:CreateWindow({
     Title = 'Least Sinful Priest',
-    Size = Vector2.new(500, 300),
 })
 
 local tab = win:Tab({
@@ -83,7 +129,7 @@ local sec = tab:Section({
 })
 
 -------------------------------------------------------
--- AUTO CONFESSIONAL TOGGLE
+-- AUTO PUNISH TOGGLE
 -------------------------------------------------------
 sec:Toggle({
     Title = 'Auto Punish Confessionals',
@@ -92,6 +138,20 @@ sec:Toggle({
         autoPunish = state
         if state then
             runPunishLoop()
+        end
+    end,
+})
+
+-------------------------------------------------------
+-- AUTO FORGIVE TOGGLE
+-------------------------------------------------------
+sec:Toggle({
+    Title = 'Auto Forgive Confessionals',
+    Default = false,
+    Callback = function(state)
+        autoForgive = state
+        if state then
+            runForgiveLoop()
         end
     end,
 })
