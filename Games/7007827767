@@ -1,3 +1,14 @@
+-- https://www.roblox.com/games/85247362414047
+
+--====================================================
+--  LOAD SAGE UI
+--====================================================
+local Sage = loadstring(
+    game:HttpGet(
+        'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
+    )
+)()
+
 --// Services
 local Players = game:GetService('Players')
 local RunService = game:GetService('RunService')
@@ -9,8 +20,8 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 -- === SETTINGS ===
-local AIM_SMOOTHNESS = 0
-local highlightsEnabled = true
+local AIM_SMOOTHNESS = 0 -- you can later wire this to a slider
+local highlightsEnabled = true -- controlled by ESP toggle
 
 -- === WHITELIST ===
 local WHITELIST = {}
@@ -50,10 +61,91 @@ local visiblePlayers = {}
 local highlights = {}
 local billboards = {}
 local isHoldingRightClick = false
+local aimbotEnabled = false -- controlled by UI toggle
 
--- ===============================
--- === REGION LOGIC ==============
--- ===============================
+--====================================================
+--  UI: COMBAT TAB / AIMBOT + ESP CONTROLS
+--====================================================
+local win = Sage:CreateWindow({
+    Title = 'Prisoner Life',
+    Size = Vector2.new(500, 300),
+})
+
+local tab = win:Tab({
+    Title = 'Combat',
+})
+
+local sec = tab:Section({
+    Title = 'Aimbot + Highlight Controls',
+})
+
+-- Aimbot toggle
+sec:Toggle({
+    Title = 'Aim Assist',
+    Default = false,
+    Callback = function(state)
+        aimbotEnabled = state
+    end,
+})
+
+-- Aim Assist Strength (1 - 10)
+local smoothSlider = sec:Slider({
+    Title = 'Aim Assist Strength',
+    Min = 1,
+    Max = 10,
+    Default = 1,
+    Callback = function(value)
+        AIM_SMOOTHNESS = value
+
+        if value == 10 then
+            smoothSlider:SetTitle('[Aimbot]')
+        else
+            smoothSlider:SetTitle('Aim Assist Strength: ' .. value)
+        end
+    end,
+})
+
+-- Highlight toggle
+sec:Toggle({
+    Title = 'Highlights',
+    Default = true,
+    Callback = function(state)
+        highlightsEnabled = state
+
+        -- Update existing highlight & billboard instances
+        for char, list in pairs(highlights) do
+            for _, h in ipairs(list) do
+                if h then
+                    h.Enabled = state
+                end
+            end
+        end
+
+        for char, data in pairs(billboards) do
+            if data.gui then
+                data.gui.Enabled = state
+            end
+        end
+    end,
+})
+
+-- Whitelist input
+sec:Input({
+    Title = 'Whitelist Player',
+    Placeholder = 'Username',
+    Callback = function(text)
+        if typeof(text) == 'string' then
+            text = text:match('^%s*(.-)%s*$') -- trim spaces
+            if text ~= '' then
+                WHITELIST[text] = true
+            end
+        end
+    end,
+})
+
+--====================================================
+--  REGION LOGIC
+--====================================================
 local PermittedRegions = ReplicatedStorage:WaitForChild('PermittedRegions')
 local RegionsFolder = ReplicatedStorage:WaitForChild('Regions')
 local regionClones = {} -- [clonePart] = {allowed = bool, outline = SelectionBox}
@@ -139,9 +231,10 @@ local function updateRegionStatus(player)
     end
 end
 
--- ===============================
--- === HELPER FUNCTIONS ==========
--- ===============================
+--====================================================
+--  HELPER FUNCTIONS
+--====================================================
+
 -- Returns all characters to ignore for raycasting
 local function getAllPlayerCharacters()
     local chars = {}
@@ -370,6 +463,10 @@ local function createBillboard(player, char)
 end
 
 local function highlightVisibleParts(player)
+    if not highlightsEnabled then
+        return
+    end
+
     local char = player.Character
     if not char then
         return
@@ -407,9 +504,9 @@ local function highlightVisibleParts(player)
     end
 end
 
--- ===============================
--- === PLAYER TRACKING ===========
--- ===============================
+--====================================================
+--  PLAYER TRACKING
+--====================================================
 local function updateVisiblePlayers()
     visiblePlayers = {}
     for _, player in ipairs(Players:GetPlayers()) do
@@ -433,10 +530,6 @@ local function getClosestHighlightedPlayer()
             if aimPart then
                 local partPos = getPartPosition(aimPart)
                 if partPos then
-                    local regionTag =
-                        player.Character:FindFirstChild('RegionStatus')
-                    local isUnauthorized = regionTag
-                        and regionTag.Value == 'Unauthorized'
                     local color = getHighlightColor(player)
                     if color == HOSTILE_COLOR then
                         local screenPos, onScreen =
@@ -462,9 +555,9 @@ local function getClosestHighlightedPlayer()
     return closestPlayer
 end
 
--- ===============================
--- === MAIN LOOP =================
--- ===============================
+--====================================================
+--  MAIN LOOPS
+--====================================================
 task.spawn(function()
     while task.wait(0.1) do
         updateVisiblePlayers()
@@ -472,58 +565,66 @@ task.spawn(function()
 end)
 
 RunService.RenderStepped:Connect(function()
-    if isHoldingRightClick then
+    if isHoldingRightClick and aimbotEnabled then
         local target = getClosestHighlightedPlayer()
         if target and target.Character then
             local aimPart = getAimPart(target.Character)
             if aimPart then
                 local partPos = getPartPosition(aimPart)
                 if partPos then
-                    if AIM_SMOOTHNESS == 0 then
+                    -- FULL AIMBOT when slider = 10
+                    if AIM_SMOOTHNESS == 10 then
                         Camera.CFrame =
                             CFrame.new(Camera.CFrame.Position, partPos)
-                    else
-                        local currentCFrame = Camera.CFrame
-                        local targetCFrame =
-                            CFrame.new(currentCFrame.Position, partPos)
-                        local screenPos, onScreen =
-                            Camera:WorldToViewportPoint(partPos)
-                        if onScreen then
-                            local center = Vector2.new(
-                                Camera.ViewportSize.X / 2,
-                                Camera.ViewportSize.Y / 2
-                            )
-                            local dist = (
-                                Vector2.new(screenPos.X, screenPos.Y) - center
-                            ).Magnitude
-                            local t = math.clamp(dist / 50, 0, 1)
-                            local assistFactor = (1 / AIM_SMOOTHNESS)
-                                * (t ^ 1.5)
-                            Camera.CFrame =
-                                currentCFrame:Lerp(targetCFrame, assistFactor)
-                        end
+                        return
+                    end
+
+                    -- SMOOTH AIM ASSIST for 1–9
+                    local currentCFrame = Camera.CFrame
+                    local targetCFrame =
+                        CFrame.new(currentCFrame.Position, partPos)
+
+                    local screenPos, onScreen =
+                        Camera:WorldToViewportPoint(partPos)
+                    if onScreen then
+                        local center = Vector2.new(
+                            Camera.ViewportSize.X / 2,
+                            Camera.ViewportSize.Y / 2
+                        )
+
+                        local dist = (
+                            Vector2.new(screenPos.X, screenPos.Y) - center
+                        ).Magnitude
+                        local t = math.clamp(dist / 50, 0, 1)
+
+                        -- smoother when AIM_SMOOTHNESS is higher
+                        local assistFactor = (1 / AIM_SMOOTHNESS) * (t ^ 1.5)
+
+                        Camera.CFrame =
+                            currentCFrame:Lerp(targetCFrame, assistFactor)
                     end
                 end
             end
         end
     end
 
-    for player, _ in pairs(visiblePlayers) do
-        highlightVisibleParts(player)
+    -- ESP
+    if highlightsEnabled then
+        for player, _ in pairs(visiblePlayers) do
+            highlightVisibleParts(player)
+        end
     end
 end)
 
--- ===============================
--- === INPUT HANDLERS ===========
--- ===============================
+--====================================================
+--  INPUT HANDLERS
+--====================================================
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then
         return
     end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         isHoldingRightClick = true
-    elseif input.KeyCode == Enum.KeyCode.P then
-        highlightsEnabled = not highlightsEnabled
     end
 end)
 
@@ -533,9 +634,9 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- ===============================
--- === PLAYER SETUP ============
--- ===============================
+--====================================================
+--  PLAYER SETUP
+--====================================================
 local function setupPlayer(player)
     if player == LocalPlayer then
         return
