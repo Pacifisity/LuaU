@@ -15,7 +15,6 @@ if not success or type(data) ~= 'table' then
     return
 end
 
-local placeId = tostring(game.PlaceId)
 local gameId = tostring(game.GameId)
 
 local matchedScriptURL = nil
@@ -25,7 +24,7 @@ for _, item in ipairs(data) do
     if item.type == 'file' and item.name then
         local fileName = item.name:match('^(%d+)$') -- extract pure numeric filenames only
 
-        if fileName == placeId or fileName == gameId then
+        if fileName == gameId then
             matchedScriptURL = item.download_url -- GitHub raw file URL
             break
         end
