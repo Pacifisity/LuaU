@@ -112,6 +112,54 @@ local function runForgiveLoop()
 end
 
 -------------------------------------------------------
+-- AUTO ULTRA PUNISH LOOP
+-------------------------------------------------------
+local autoUltra = false
+local ultraThread = nil
+
+local function runUltraLoop()
+    ultraThread = task.spawn(function()
+        while autoUltra do
+            local originalCF = getHrp().CFrame
+
+            for _, booth in ipairs(workspace.ConfessionalBooths:GetChildren()) do
+                if not autoUltra then
+                    break
+                end
+
+                local button = booth:FindFirstChild('punishButton')
+                if button and button:IsA('BasePart') then
+                    if button.BrickColor == BrickColor.new('Really red') then
+                        local click =
+                            button:FindFirstChildWhichIsA('ClickDetector')
+                        if click then
+                            -- TP under button
+                            tp(
+                                CFrame.new(
+                                    button.Position - Vector3.new(0, 3, 0)
+                                )
+                            )
+                            task.wait(0.1)
+
+                            for i = 1, spamAmount do
+                                fireclickdetector(click)
+                            end
+
+                            task.wait(7)
+
+                            -- return to original position
+                            tp(originalCF)
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.1)
+        end
+    end)
+end
+
+-------------------------------------------------------
 -- MAIN WINDOW
 -------------------------------------------------------
 local win = Sage:CreateWindow({
@@ -130,7 +178,7 @@ local sec = tab:Section({
 -- AUTO PUNISH TOGGLE
 -------------------------------------------------------
 sec:Toggle({
-    Title = 'Auto Punish Confessionals',
+    Title = 'Auto Punish',
     Default = false,
     Callback = function(state)
         autoPunish = state
@@ -141,10 +189,24 @@ sec:Toggle({
 })
 
 -------------------------------------------------------
+-- AUTO ULTRA PUNISH TOGGLE
+-------------------------------------------------------
+sec:Toggle({
+    Title = 'Auto Ultra Punish',
+    Default = false,
+    Callback = function(state)
+        autoUltra = state
+        if state then
+            runUltraLoop()
+        end
+    end,
+})
+
+-------------------------------------------------------
 -- AUTO FORGIVE TOGGLE
 -------------------------------------------------------
 sec:Toggle({
-    Title = 'Auto Forgive Confessionals',
+    Title = 'Auto Forgive',
     Default = false,
     Callback = function(state)
         autoForgive = state
