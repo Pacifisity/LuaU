@@ -709,6 +709,111 @@ function Section:Input(options)
 end
 
 ----------------------------------------------------------------
+-- == SECTION : SLIDER ==
+----------------------------------------------------------------
+function Section:Slider(options)
+    options = options or {}
+
+    local text = options.Title or options.Text or "Slider"
+    local min = options.Min or 0
+    local max = options.Max or 100
+    local default = options.Default or min
+    local callback = options.Callback or function() end
+    local round = options.Decimals or 0 -- how many decimal places
+
+    ------------------------------------------------------------
+    -- HOLDER
+    ------------------------------------------------------------
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, 0, 0, 40)
+    holder.BackgroundTransparency = 1
+    holder.Parent = self._frame
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, 0, 0, 18)
+    label.Text = text .. " [" .. tostring(default) .. "]"
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 14
+    label.TextColor3 = Theme.Text
+    label.Parent = holder
+
+    ------------------------------------------------------------
+    -- BAR
+    ------------------------------------------------------------
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, 0, 0, 8)
+    bar.Position = UDim2.new(0, 0, 0, 22)
+    bar.BackgroundColor3 = Theme.Button
+    bar.BorderSizePixel = 0
+    bar.Parent = holder
+    makeRound(bar, 8)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Accent
+    fill.BorderSizePixel = 0
+    fill.Parent = bar
+    makeRound(fill, 8)
+
+    ------------------------------------------------------------
+    -- DRAGGING LOGIC
+    ------------------------------------------------------------
+    local UIS = game:GetService("UserInputService")
+    local dragging = false
+    local value = default
+
+    local function setValueFromX(x)
+        local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        local raw = min + (max - min) * rel
+
+        if round == 0 then
+            value = math.floor(raw + 0.5)
+        else
+            value = tonumber(string.format("%." .. round .. "f", raw))
+        end
+
+        label.Text = text .. " [" .. tostring(value) .. "]"
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+
+        task.spawn(callback, value)
+    end
+
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            setValueFromX(input.Position.X)
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            setValueFromX(input.Position.X)
+        end
+    end)
+
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    ------------------------------------------------------------
+    -- PUBLIC OBJECT
+    ------------------------------------------------------------
+    local sliderObj = {
+        Get = function() return value end,
+        Set = function(v)
+            v = math.clamp(v, min, max)
+            setValueFromX(bar.AbsolutePosition.X + bar.AbsoluteSize.X * ((v - min) / (max - min)))
+        end
+    }
+
+    return sliderObj
+end
+
+----------------------------------------------------------------
 -- LOADSTRING ACCESS
 ----------------------------------------------------------------
 return setmetatable({
