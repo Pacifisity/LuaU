@@ -123,7 +123,7 @@ local tab = win:Tab({
 })
 
 local sec = tab:Section({
-    Title = 'Player',
+    Title = "⚠️ Spam above 10,000 doesn't do anything",
 })
 
 -------------------------------------------------------
@@ -198,11 +198,4 @@ sec:Input({
             spamAmount = math.floor(num)
         end
     end,
-})
-
--------------------------------------------------------
--- SPAM DISCLAIMER LABEL
--------------------------------------------------------
-sec:Label({
-    Title = "⚠️ Spam above 10,000 doesn't do anything",
 })
