@@ -7,6 +7,7 @@ local Sage = loadstring(
 
 local Players = game:GetService('Players')
 local lp = Players.LocalPlayer
+local spamAmount = 1 -- default spam amount
 
 -------------------------------------------------------
 -- HELPERS
@@ -55,10 +56,7 @@ local function runPunishLoop()
                             )
                             task.wait(0.1)
 
-                            -- spam 100x
-                            for i = 1, 100 do
-                                fireclickdetector(click)
-                            end
+                            fireclickdetector(click)
 
                             tp(originalCF)
                         end
@@ -154,4 +152,57 @@ sec:Toggle({
             runForgiveLoop()
         end
     end,
+})
+
+-------------------------------------------------------
+-- MANUAL PROXIMITY PUNISH BUTTON
+-------------------------------------------------------
+sec:Button({
+    Title = 'Ultra Punish (~10 sin per spam)',
+    Callback = function()
+        local hrp = getHrp()
+
+        for _, booth in ipairs(workspace.ConfessionalBooths:GetChildren()) do
+            local button = booth:FindFirstChild('punishButton')
+            if button and button:IsA('BasePart') then
+                local dist = (hrp.Position - button.Position).Magnitude
+                if dist <= 10 then
+                    if button.BrickColor == BrickColor.new('Really red') then
+                        local click =
+                            button:FindFirstChildWhichIsA('ClickDetector')
+                        if click then
+                            -- spam using input box value
+                            for i = 1, spamAmount do
+                                fireclickdetector(click)
+                            end
+
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end,
+})
+
+-------------------------------------------------------
+-- SPAM AMOUNT INPUT BOX
+-------------------------------------------------------
+sec:Input({
+    Title = 'Spam Amount',
+    Default = '1',
+    Placeholder = 'Enter number of clicks',
+    Callback = function(text)
+        local num = tonumber(text)
+        if num and num > 0 then
+            spamAmount = math.floor(num)
+        end
+    end,
+})
+
+-------------------------------------------------------
+-- SPAM DISCLAIMER LABEL
+-------------------------------------------------------
+sec:Label({
+    Title = "⚠️ Spam above 10,000 doesn't do anything",
 })
