@@ -13,11 +13,7 @@ local AIM_SMOOTHNESS = 0
 local highlightsEnabled = true
 
 -- === WHITELIST ===
-local WHITELIST = {
-    ['Pacifisity'] = true,
-    ['FreakyLabrador1'] = true,
-    ['Stefanpa123456p'] = true,
-}
+local WHITELIST = {}
 
 -- === COLORS ===
 local HOSTILE_COLOR = Color3.fromRGB(255, 0, 0)
