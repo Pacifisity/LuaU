@@ -1,0 +1,97 @@
+-- load Sage UI
+local Sage = loadstring(
+    game:HttpGet(
+        'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
+    )
+)()
+
+local Players = game:GetService('Players')
+local lp = Players.LocalPlayer
+
+-------------------------------------------------------
+-- HELPERS
+-------------------------------------------------------
+local function getHrp()
+    local char = lp.Character or lp.CharacterAdded:Wait()
+    return char:WaitForChild('HumanoidRootPart')
+end
+
+local function tp(cf)
+    getHrp().CFrame = cf
+end
+
+-------------------------------------------------------
+-- AUTO CONFESSIONAL LOOP
+-------------------------------------------------------
+local autoPunish = false
+local punishThread = nil
+
+local function runPunishLoop()
+    punishThread = task.spawn(function()
+        while autoPunish do
+            local originalCF = getHrp().CFrame
+
+            for _, booth in ipairs(workspace.ConfessionalBooths:GetChildren()) do
+                if not autoPunish then
+                    break
+                end
+
+                local button = booth:FindFirstChild('punishButton')
+                if button and button:IsA('BasePart') then
+                    if button.BrickColor == BrickColor.new('Really red') then
+                        local click =
+                            button:FindFirstChildWhichIsA('ClickDetector')
+
+                        if click then
+                            -- teleport to button
+                            tp(
+                                CFrame.new(
+                                    button.Position - Vector3.new(0, 3, 0)
+                                )
+                            )
+                            task.wait(0.25)
+
+                            fireclickdetector(click)
+                            task.wait(0.1)
+
+                            -- return to original pos
+                            tp(originalCF)
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.15)
+        end
+    end)
+end
+
+-------------------------------------------------------
+-- MAIN WINDOW
+-------------------------------------------------------
+local win = Sage:CreateWindow({
+    Title = 'Least Sinful Priest',
+    Size = Vector2.new(500, 300),
+})
+
+local tab = win:Tab({
+    Title = 'Features',
+})
+
+local sec = tab:Section({
+    Title = 'Player',
+})
+
+-------------------------------------------------------
+-- AUTO CONFESSIONAL TOGGLE
+-------------------------------------------------------
+sec:Toggle({
+    Title = 'Auto Punish Confessionals',
+    Default = false,
+    Callback = function(state)
+        autoPunish = state
+        if state then
+            runPunishLoop()
+        end
+    end,
+})
