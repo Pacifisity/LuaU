@@ -1,0 +1,555 @@
+--// Services
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local UserInputService = game:GetService('UserInputService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Workspace = game:GetService('Workspace')
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- === SETTINGS ===
+local AIM_SMOOTHNESS = 0
+local highlightsEnabled = true
+
+-- === WHITELIST ===
+local WHITELIST = {
+    ['Pacifisity'] = true,
+    ['FreakyLabrador1'] = true,
+    ['Stefanpa123456p'] = true,
+}
+
+-- === COLORS ===
+local HOSTILE_COLOR = Color3.fromRGB(255, 0, 0)
+local FRIENDLY_COLOR = Color3.fromRGB(0, 255, 0)
+local WHITELIST_COLOR = Color3.fromRGB(170, 0, 255)
+local KEY_COLOR = Color3.fromRGB(255, 0, 0)
+
+-- === BODY PARTS ===
+local BODY_PARTS = {
+    Head = true,
+    UpperTorso = true,
+    LowerTorso = true,
+    Torso = true,
+    LeftUpperArm = true,
+    RightUpperArm = true,
+    LeftLowerArm = true,
+    RightLowerArm = true,
+    LeftHand = true,
+    RightHand = true,
+    LeftUpperLeg = true,
+    RightUpperLeg = true,
+    LeftLowerLeg = true,
+    RightLowerLeg = true,
+    LeftFoot = true,
+    RightFoot = true,
+    ['Left Arm'] = true,
+    ['Right Arm'] = true,
+    ['Left Leg'] = true,
+    ['Right Leg'] = true,
+}
+
+-- === STATE ===
+local visiblePlayers = {}
+local highlights = {}
+local billboards = {}
+local isHoldingRightClick = false
+
+-- ===============================
+-- === REGION LOGIC ==============
+-- ===============================
+local PermittedRegions = ReplicatedStorage:WaitForChild('PermittedRegions')
+local RegionsFolder = ReplicatedStorage:WaitForChild('Regions')
+local regionClones = {} -- [clonePart] = {allowed = bool, outline = SelectionBox}
+
+-- Clone regions
+for _, part in pairs(RegionsFolder:GetChildren()) do
+    if part:IsA('BasePart') then
+        local clone = part:Clone()
+        clone.Anchored = true
+        clone.CanCollide = false
+        clone.Transparency = 1
+        clone.Parent = Workspace
+
+        local outline = Instance.new('SelectionBox')
+        outline.Adornee = clone
+        outline.LineThickness = 0.05
+        outline.Parent = clone
+
+        -- HIDE DEBUG OUTLINES
+        outline.Visible = false
+
+        local config = PermittedRegions:FindFirstChild(part.Name)
+        local allowed = config and config.Value == true
+        outline.Color3 = allowed and Color3.fromRGB(0, 255, 0)
+            or Color3.fromRGB(255, 0, 0)
+        regionClones[clone] = { allowed = allowed, outline = outline }
+    end
+end
+
+-- Dynamic region updates
+for _, config in pairs(PermittedRegions:GetChildren()) do
+    if config:IsA('BoolValue') then
+        config.Changed:Connect(function(newValue)
+            for clone, data in pairs(regionClones) do
+                if clone.Name == config.Name then
+                    data.allowed = newValue
+                    if data.outline then
+                        data.outline.Color3 = newValue
+                                and Color3.fromRGB(0, 255, 0)
+                            or Color3.fromRGB(255, 0, 0)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+local function isInsidePart(part, position)
+    local MARGIN = 0.5
+    local localPos = part.CFrame:PointToObjectSpace(position)
+    local halfSize = part.Size / 2
+    return math.abs(localPos.X) <= halfSize.X + MARGIN
+        and math.abs(localPos.Y) <= halfSize.Y + MARGIN
+        and math.abs(localPos.Z) <= halfSize.Z + MARGIN
+end
+
+local function isInsideAnyAllowedRegion(position)
+    for clone, data in pairs(regionClones) do
+        if isInsidePart(clone, position) and data.allowed then
+            return true
+        end
+    end
+    return false
+end
+
+local function updateRegionStatus(player)
+    local char = player.Character
+    if
+        char
+        and player.Team
+        and player.Team.Name == 'Inmates'
+        and char:FindFirstChild('HumanoidRootPart')
+    then
+        local insideAllowed =
+            isInsideAnyAllowedRegion(char.HumanoidRootPart.Position)
+        local tag = char:FindFirstChild('RegionStatus')
+        if not tag then
+            tag = Instance.new('StringValue')
+            tag.Name = 'RegionStatus'
+            tag.Parent = char
+        end
+        tag.Value = insideAllowed and 'Allowed' or 'Unauthorized'
+    end
+end
+
+-- ===============================
+-- === HELPER FUNCTIONS ==========
+-- ===============================
+-- Returns all characters to ignore for raycasting
+local function getAllPlayerCharacters()
+    local chars = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            table.insert(chars, player.Character)
+        end
+    end
+    return chars
+end
+
+-- Visibility check ignoring all player parts
+local function isPartVisible(part)
+    if not part or not part:IsA('BasePart') then
+        return false
+    end
+    local origin = Camera.CFrame.Position
+    local direction = part.Position - origin
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = getAllPlayerCharacters()
+    rayParams.IgnoreWater = true
+    local result = Workspace:Raycast(origin, direction, rayParams)
+    return result == nil
+        or result.Instance == part
+        or part:IsDescendantOf(result.Instance)
+end
+
+local function getVisibleParts(model)
+    local parts = {}
+    for _, part in ipairs(model:GetDescendants()) do
+        if
+            part:IsA('BasePart')
+            and BODY_PARTS[part.Name]
+            and isPartVisible(part)
+        then
+            table.insert(parts, part)
+        end
+    end
+    return parts
+end
+
+local function getAimPart(character)
+    local visibleParts = getVisibleParts(character)
+    if #visibleParts == 0 then
+        return nil
+    end
+    local priorityParts = {
+        'Head',
+        'UpperTorso',
+        'Torso',
+        'LowerTorso',
+        'LeftUpperArm',
+        'RightUpperArm',
+        'LeftLowerArm',
+        'RightLowerArm',
+        'LeftHand',
+        'RightHand',
+        'LeftUpperLeg',
+        'RightUpperLeg',
+        'LeftLowerLeg',
+        'RightLowerLeg',
+        'LeftFoot',
+        'RightFoot',
+    }
+    for _, partName in ipairs(priorityParts) do
+        local part = character:FindFirstChild(partName)
+        if part and table.find(visibleParts, part) then
+            return part
+        end
+    end
+    return visibleParts[math.random(1, #visibleParts)]
+end
+
+local function getPartPosition(part)
+    if part:IsA('BasePart') then
+        return part.Position
+    end
+    if part:IsA('Model') then
+        return part:GetPivot().Position
+    end
+    return nil
+end
+
+local function hasKeyTool(player)
+    local char = player.Character
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA('Tool') and item.Name == 'Key' then
+                return true
+            end
+        end
+    end
+    local backpack = player:FindFirstChildOfClass('Backpack')
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA('Tool') and item.Name == 'Key' then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function shouldHighlight(player)
+    local myTeam = LocalPlayer.Team
+    local team = player.Team
+
+    -- Ignore teammates
+    if myTeam and team and myTeam == team then
+        return false
+    end
+
+    local status = player:FindFirstChild('Status')
+    local isHostile = status
+        and status:FindFirstChild('Hostile')
+        and status.Hostile.Value
+
+    if not myTeam then
+        return false
+    end
+
+    if myTeam.Name == 'Guards' then
+        -- Guards see hostile inmates and all criminals
+        return (team and team.Name == 'Inmates' and isHostile)
+            or (team and team.Name == 'Criminals')
+    elseif myTeam.Name == 'Criminals' then
+        -- Criminals see hostile inmates and all guards/warden
+        return (team and team.Name == 'Inmates' and isHostile)
+            or (team and (team.Name == 'Guards' or team.Name == 'Warden'))
+    elseif myTeam.Name == 'Inmates' then
+        -- Inmates see criminals, guards, and warden
+        return team
+            and (
+                team.Name == 'Criminals'
+                or team.Name == 'Guards'
+                or team.Name == 'Warden'
+            )
+    elseif myTeam.Name == 'Warden' then
+        -- Warden sees hostile inmates
+        return team and team.Name == 'Inmates' and isHostile
+    end
+
+    return false
+end
+
+local function getHighlightColor(player)
+    local char = player.Character
+    if not char then
+        return FRIENDLY_COLOR
+    end
+    if WHITELIST[player.Name] then
+        return WHITELIST_COLOR
+    end
+
+    local myTeam = LocalPlayer.Team
+    local playerTeam = player.Team
+
+    -- Everyone on the same team is always friendly
+    if myTeam and playerTeam and myTeam == playerTeam then
+        return FRIENDLY_COLOR
+    end
+
+    local tag = char:FindFirstChild('RegionStatus')
+    if tag and tag.Value == 'Unauthorized' then
+        return HOSTILE_COLOR
+    end
+
+    if hasKeyTool(player) then
+        return KEY_COLOR
+    end
+
+    if shouldHighlight(player) then
+        return HOSTILE_COLOR
+    end
+
+    return FRIENDLY_COLOR
+end
+
+local function highlightPart(part, color, character)
+    if not part:IsA('BasePart') then
+        return
+    end
+    local highlight = Instance.new('Highlight')
+    highlight.Name = 'StatusHighlight'
+    highlight.FillTransparency = 1
+    highlight.OutlineTransparency = 0
+    highlight.OutlineColor = color
+    highlight.Enabled = highlightsEnabled
+    highlight.Parent = part
+    highlights[character] = highlights[character] or {}
+    table.insert(highlights[character], highlight)
+end
+
+local function createBillboard(player, char)
+    if not char:FindFirstChild('Head') or billboards[char] then
+        return
+    end
+    local billboard = Instance.new('BillboardGui')
+    billboard.Name = 'PlayerInfo'
+    billboard.Size = UDim2.new(0, 100, 0, 20)
+    billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Enabled = highlightsEnabled
+    billboard.Parent = char.Head
+
+    local label = Instance.new('TextLabel')
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.SourceSansBold
+    label.TextScaled = true
+    label.TextStrokeTransparency = 0.5
+    label.Parent = billboard
+
+    local humanoid = char:FindFirstChildOfClass('Humanoid')
+    if humanoid then
+        label.Text =
+            string.format('%s: %d', player.Name, math.floor(humanoid.Health))
+        humanoid.HealthChanged:Connect(function(h)
+            label.Text = string.format('%s: %d', player.Name, math.floor(h))
+        end)
+    else
+        label.Text = player.Name .. ': ???'
+    end
+    billboards[char] = { gui = billboard, label = label }
+end
+
+local function highlightVisibleParts(player)
+    local char = player.Character
+    if not char then
+        return
+    end
+    updateRegionStatus(player)
+    local color = getHighlightColor(player)
+
+    -- Clear old highlights
+    if highlights[char] then
+        for _, h in ipairs(highlights[char]) do
+            if h and h.Parent then
+                h:Destroy()
+            end
+        end
+    end
+    highlights[char] = {}
+
+    if WHITELIST[player.Name] then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA('BasePart') and BODY_PARTS[part.Name] then
+                highlightPart(part, color, char)
+            end
+        end
+    else
+        for _, part in ipairs(getVisibleParts(char)) do
+            highlightPart(part, color, char)
+        end
+    end
+
+    createBillboard(player, char)
+    if billboards[char] and billboards[char].label then
+        local visible = WHITELIST[player.Name] or (#getVisibleParts(char) > 0)
+        billboards[char].label.TextColor3 = color
+        billboards[char].gui.Enabled = highlightsEnabled and visible
+    end
+end
+
+-- ===============================
+-- === PLAYER TRACKING ===========
+-- ===============================
+local function updateVisiblePlayers()
+    visiblePlayers = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            if
+                WHITELIST[player.Name]
+                or shouldHighlight(player)
+                or (#getVisibleParts(player.Character) > 0)
+            then
+                visiblePlayers[player] = true
+            end
+        end
+    end
+end
+
+local function getClosestHighlightedPlayer()
+    local closestPlayer, shortestDistance = nil, 50
+    for player, _ in pairs(visiblePlayers) do
+        if player.Character and not WHITELIST[player.Name] then
+            local aimPart = getAimPart(player.Character)
+            if aimPart then
+                local partPos = getPartPosition(aimPart)
+                if partPos then
+                    local regionTag =
+                        player.Character:FindFirstChild('RegionStatus')
+                    local isUnauthorized = regionTag
+                        and regionTag.Value == 'Unauthorized'
+                    local color = getHighlightColor(player)
+                    if color == HOSTILE_COLOR then
+                        local screenPos, onScreen =
+                            Camera:WorldToViewportPoint(partPos)
+                        if onScreen then
+                            local center = Vector2.new(
+                                Camera.ViewportSize.X / 2,
+                                Camera.ViewportSize.Y / 2
+                            )
+                            local dist = (
+                                Vector2.new(screenPos.X, screenPos.Y) - center
+                            ).Magnitude
+                            if dist < shortestDistance then
+                                shortestDistance = dist
+                                closestPlayer = player
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- ===============================
+-- === MAIN LOOP =================
+-- ===============================
+task.spawn(function()
+    while task.wait(0.1) do
+        updateVisiblePlayers()
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if isHoldingRightClick then
+        local target = getClosestHighlightedPlayer()
+        if target and target.Character then
+            local aimPart = getAimPart(target.Character)
+            if aimPart then
+                local partPos = getPartPosition(aimPart)
+                if partPos then
+                    if AIM_SMOOTHNESS == 0 then
+                        Camera.CFrame =
+                            CFrame.new(Camera.CFrame.Position, partPos)
+                    else
+                        local currentCFrame = Camera.CFrame
+                        local targetCFrame =
+                            CFrame.new(currentCFrame.Position, partPos)
+                        local screenPos, onScreen =
+                            Camera:WorldToViewportPoint(partPos)
+                        if onScreen then
+                            local center = Vector2.new(
+                                Camera.ViewportSize.X / 2,
+                                Camera.ViewportSize.Y / 2
+                            )
+                            local dist = (
+                                Vector2.new(screenPos.X, screenPos.Y) - center
+                            ).Magnitude
+                            local t = math.clamp(dist / 50, 0, 1)
+                            local assistFactor = (1 / AIM_SMOOTHNESS)
+                                * (t ^ 1.5)
+                            Camera.CFrame =
+                                currentCFrame:Lerp(targetCFrame, assistFactor)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for player, _ in pairs(visiblePlayers) do
+        highlightVisibleParts(player)
+    end
+end)
+
+-- ===============================
+-- === INPUT HANDLERS ===========
+-- ===============================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        isHoldingRightClick = true
+    elseif input.KeyCode == Enum.KeyCode.P then
+        highlightsEnabled = not highlightsEnabled
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        isHoldingRightClick = false
+    end
+end)
+
+-- ===============================
+-- === PLAYER SETUP ============
+-- ===============================
+local function setupPlayer(player)
+    if player == LocalPlayer then
+        return
+    end
+    player.CharacterAdded:Connect(function()
+        task.wait(0.2)
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    setupPlayer(player)
+end
+Players.PlayerAdded:Connect(setupPlayer)
