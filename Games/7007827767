@@ -98,9 +98,9 @@ local smoothSlider = sec:Slider({
         AIM_SMOOTHNESS = value
 
         if value == 10 then
-            smoothSlider:SetTitle('[Aimbot]')
+            smoothSlider.TitleLabel.Text = '[Aimbot]'
         else
-            smoothSlider:SetTitle('Aim Assist Strength: ' .. value)
+            smoothSlider.TitleLabel.Text = 'Aim Assist Strength: ' .. value
         end
     end,
 })
