@@ -1,0 +1,185 @@
+-- https://www.roblox.com/games/16228276182
+
+-- Load UI Library from GitHub
+local Sage = loadstring(
+    game:HttpGet(
+        "https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua"
+    )
+)()
+
+---------------------------------------------------------------------
+-- GAME SERVICES
+---------------------------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local lp = Players.LocalPlayer
+
+local character = lp.Character or lp.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local MeteorsFolder = workspace:WaitForChild("Map"):WaitForChild("Meteors")
+
+---------------------------------------------------------------------
+-- CREATE UI WINDOW
+---------------------------------------------------------------------
+local win = Sage:CreateWindow({
+    Title = "Meteor Control",
+    Size = Vector2.new(500, 300),
+})
+
+local tab = win:Tab({ Title = "Meteor Detector" })
+local sec = tab:Section({ Title = "Controls" })
+
+---------------------------------------------------------------------
+-- POPUP NOTIFICATION UI
+---------------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SageMeteorNotify"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = lp:WaitForChild("PlayerGui")
+
+local NotifyLabel = Instance.new("TextLabel")
+NotifyLabel.Size = UDim2.new(0.5, 0, 0.1, 0)
+NotifyLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+NotifyLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+NotifyLabel.BackgroundTransparency = 1
+NotifyLabel.TextColor3 = Color3.fromRGB(235, 220, 255)
+NotifyLabel.TextStrokeTransparency = 0.5
+NotifyLabel.TextScaled = true
+NotifyLabel.Font = Enum.Font.GothamBlack
+NotifyLabel.Visible = false
+NotifyLabel.Parent = ScreenGui
+
+local function notify(text)
+    NotifyLabel.Text = text
+    NotifyLabel.Visible = true
+    NotifyLabel.TextTransparency = 0
+    NotifyLabel.TextStrokeTransparency = 0.5
+
+    task.spawn(function()
+        task.wait(2)
+        for i = 1, 15 do
+            NotifyLabel.TextTransparency = i / 15
+            NotifyLabel.TextStrokeTransparency = 0.5 + (i / 15)
+            task.wait(0.03)
+        end
+        NotifyLabel.Visible = false
+    end)
+end
+
+---------------------------------------------------------------------
+-- Meteor Highlight FX
+---------------------------------------------------------------------
+local function highlightMeteor(model)
+    for _, obj in ipairs(model:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            local h = Instance.new("Highlight")
+            h.FillColor = Color3.fromRGB(150, 90, 255)
+            h.FillTransparency = 0.4
+            h.OutlineTransparency = 0
+            h.Parent = obj
+        end
+    end
+end
+
+---------------------------------------------------------------------
+-- Beam Connection (Player → Meteor)
+---------------------------------------------------------------------
+local attach0 = Instance.new("Attachment")
+attach0.Name = "PlayerMeteorAttach"
+attach0.Parent = hrp
+
+local beam = Instance.new("Beam")
+beam.Name = "MeteorBeam"
+beam.Attachment0 = attach0
+beam.Width0 = 0.2
+beam.Width1 = 0.2
+beam.Color = ColorSequence.new(Color3.fromRGB(145, 70, 255))
+beam.Enabled = false
+beam.Parent = hrp
+
+local currentMeteor = nil
+local attach1 = nil
+
+RunService.RenderStepped:Connect(function()
+    if currentMeteor and currentMeteor.Parent and attach1 then
+        attach0.WorldPosition = hrp.Position
+
+        local primary = currentMeteor.PrimaryPart
+            or currentMeteor:FindFirstChildWhichIsA("BasePart")
+
+        if primary then
+            attach1.WorldPosition = primary.Position
+        end
+    end
+end)
+
+---------------------------------------------------------------------
+-- Meteor Detector Logic
+---------------------------------------------------------------------
+local detectorEnabled = false
+
+local function enableDetector()
+    if detectorEnabled then return end
+    detectorEnabled = true
+
+    notify("Meteor detector active!")
+
+    MeteorsFolder.ChildAdded:Connect(function(obj)
+        if not detectorEnabled then return end
+
+        if obj:IsA("Model") and obj.Name == "Meteor" then
+            notify("Meteor Spawned!")
+            highlightMeteor(obj)
+
+            if attach1 then
+                attach1:Destroy()
+            end
+
+            currentMeteor = obj
+
+            local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if not pp then return end
+
+            attach1 = Instance.new("Attachment")
+            attach1.Name = "MeteorAttach"
+            attach1.Parent = pp
+
+            beam.Attachment1 = attach1
+            beam.Enabled = true
+
+            obj.Destroying:Connect(function()
+                beam.Enabled = false
+                currentMeteor = nil
+            end)
+        end
+    end)
+end
+
+local function disableDetector()
+    detectorEnabled = false
+    beam.Enabled = false
+
+    if attach1 then
+        attach1:Destroy()
+        attach1 = nil
+    end
+
+    currentMeteor = nil
+    notify("Meteor detector disabled.")
+end
+
+---------------------------------------------------------------------
+-- UI Toggle
+---------------------------------------------------------------------
+sec:Toggle({
+    Title = "Meteor Detector",
+    Default = true,
+    Callback = function(state)
+        if state then
+            enableDetector()
+        else
+            disableDetector()
+        end
+    end,
+})
