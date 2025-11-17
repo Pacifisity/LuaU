@@ -361,8 +361,6 @@ function Library:CreateWindow(options)
         gui:Destroy()
     end)
 
-    minimizeWindow()
-
     return window
 end
 
