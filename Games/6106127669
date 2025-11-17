@@ -1,0 +1,132 @@
+--====================================================
+--  LOAD SAGE UI
+--====================================================
+local Sage = loadstring(
+    game:HttpGet(
+        'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
+    )
+)()
+
+local Players = game:GetService('Players')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local UserInputService = game:GetService('UserInputService')
+local LocalPlayer = Players.LocalPlayer
+local mouse = LocalPlayer:GetMouse()
+
+-- =====================================================
+-- UI SETUP
+-- =====================================================
+local win = Sage:CreateWindow({
+    Title = 'Merging Game',
+    Size = Vector2.new(450, 300),
+})
+
+local tab = win:Tab({ Title = 'Spawner' })
+local sec = tab:Section({ Title = 'Controls' })
+
+---------------------------------------------------------------------
+-- INPUT: PLAYER TARGET
+---------------------------------------------------------------------
+local targetName = 'yanprog2'
+
+sec:Input({
+    Title = 'Target Player',
+    Default = 'yanprog2',
+    Placeholder = 'Enter player name',
+    Callback = function(value)
+        targetName = value
+    end,
+})
+
+---------------------------------------------------------------------
+-- TOGGLES
+---------------------------------------------------------------------
+local spawnOnPlayer = false
+local spawnOnCursor = false
+local spawnAtOrigin = false -- << NEW TOGGLE
+
+sec:Toggle({
+    Title = 'Spawn On Player',
+    Default = false,
+    Callback = function(state)
+        spawnOnPlayer = state
+    end,
+})
+
+sec:Toggle({
+    Title = 'Spawn On Cursor',
+    Default = false,
+    Callback = function(state)
+        spawnOnCursor = state
+    end,
+})
+
+sec:Toggle({
+    Title = 'Spawn at Origin (0,10,0)',
+    Default = false,
+    Callback = function(state)
+        spawnAtOrigin = state
+    end,
+})
+
+-- =====================================================
+-- SPAWNING LOOP
+-- =====================================================
+
+task.spawn(function()
+    while task.wait() do
+        ---------------------------------------------------------------------
+        -- 1) SPAWN ON PLAYER
+        ---------------------------------------------------------------------
+        if spawnOnPlayer then
+            local target = Players:FindFirstChild(targetName)
+
+            if
+                target
+                and target.Character
+                and target.Character:FindFirstChild('HumanoidRootPart')
+            then
+                local hrp = target.Character.HumanoidRootPart
+                local hrpHeight = hrp.Size.Y / 2
+
+                -- A) Spawn below feet
+                local underPos = hrp.Position
+                    - Vector3.new(0, hrpHeight + 0.1, 0)
+                ReplicatedStorage.Blocks.Events.PlaceEvent:FireServer(underPos)
+
+                -- B) Spawn in walking direction
+                local vel = hrp.AssemblyLinearVelocity
+                local move = Vector3.new(vel.X, 0, vel.Z)
+
+                if move.Magnitude > 1 then
+                    move = move.Unit
+                    local aheadPos = hrp.Position
+                        + move * 1.5
+                        - Vector3.new(0, hrpHeight + 0.1, 0)
+                    ReplicatedStorage.Blocks.Events.PlaceEvent:FireServer(
+                        aheadPos
+                    )
+                end
+            end
+        end
+
+        ---------------------------------------------------------------------
+        -- 2) SPAWN ON CURSOR POSITION
+        ---------------------------------------------------------------------
+        if spawnOnCursor then
+            local hitPos = mouse.Hit and mouse.Hit.p
+            if hitPos then
+                ReplicatedStorage.Blocks.Events.PlaceEvent:FireServer(hitPos)
+            end
+        end
+
+        ---------------------------------------------------------------------
+        -- 3) SPAWN AT ORIGIN (0,10,0)
+        ---------------------------------------------------------------------
+        if spawnAtOrigin then
+            ReplicatedStorage.Blocks.Events.PlaceEvent:FireServer(
+                Vector3.new(0, 10, 0)
+            )
+        end
+    end
+end)
