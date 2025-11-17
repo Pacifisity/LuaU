@@ -83,7 +83,7 @@ end
 -----------------------------
 -- CLASS DEFINITIONS
 -----------------------------
-local  = class()
+local Window = class()
 local Tab = class()
 local Section = class()
 
@@ -361,6 +361,8 @@ function Library:CreateWindow(options)
         gui:Destroy()
     end)
 
+    minimizeWindow()
+    
     return window
 end
 
