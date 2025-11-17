@@ -32,7 +32,7 @@ for _, item in ipairs(data) do
 end
 
 if not matchedScriptURL then
-    warn('No script found for this game.')
+    warn('No script found for this game.', game.GameId)
     return
 end
 
@@ -46,5 +46,5 @@ if not ok or not loaded then
     return
 end
 
-print('Loaded game script')
+print('Loaded game script', game.GameId)
 loaded()
