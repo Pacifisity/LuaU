@@ -581,7 +581,6 @@ function Section:Toggle(options)
     local holder = Instance.new('Frame')
     holder.Size = UDim2.new(1, 0, 0, 26)
     holder.BackgroundTransparency = 1
-    holder.LayoutOrder = #self._frame:GetChildren() + 1 -- FIX
     holder.Parent = self._frame
 
     -- Label
