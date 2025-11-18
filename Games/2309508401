@@ -1,0 +1,242 @@
+--====================================================
+--  LOAD SAGE UI
+--====================================================
+local Sage = loadstring(
+    game:HttpGet(
+        'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
+    )
+)()
+
+--====================================================
+--  SERVICES
+--====================================================
+local Players = game:GetService('Players')
+local UserInputService = game:GetService('UserInputService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Workspace = game:GetService('Workspace')
+
+local LocalPlayer = Players.LocalPlayer
+
+local clickToFire = false
+local autoFirePlayers = false -- NEW TOGGLE
+
+--====================================================
+--  UI
+--====================================================
+local win = Sage:CreateWindow({
+    Title = 'Smooth Slicing',
+    Size = Vector2.new(450, 250),
+})
+
+local tab = win:Tab({ Title = 'Controls' })
+
+----------------------------------------------------
+-- SPELL BOOK SECTION
+----------------------------------------------------
+local sec = tab:Section({ Title = 'Spell Book' })
+
+-- Toggle: Infinite Click
+sec:Toggle({
+    Title = 'Infinite Click',
+    Default = false,
+    Callback = function(state)
+        clickToFire = state
+    end,
+})
+
+-- Toggle: Shotgun spray at players within 25 studs
+sec:Toggle({
+    Title = 'Shotgun blast nearby players',
+    Default = false,
+    Callback = function(state)
+        autoFirePlayers = state
+
+        if state then
+            task.spawn(function()
+                while autoFirePlayers do
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild('HumanoidRootPart')
+                    if not hrp then
+                        task.wait(0.1)
+                        continue
+                    end
+
+                    local origin = hrp.Position
+                    local range = 25
+                    local pellets = 12 -- how many rays per blast
+                    local spread = 0.25 -- how wide the cone is (0.1 = tight, 0.5 = wide)
+
+                    for _, plr in ipairs(Players:GetPlayers()) do
+                        if plr ~= LocalPlayer and plr.Character then
+                            local targetHRP =
+                                plr.Character:FindFirstChild('HumanoidRootPart')
+                            if targetHRP then
+                                local dist = (targetHRP.Position - origin).Magnitude
+
+                                if dist <= range then
+                                    local baseDir = (
+                                        targetHRP.Position - origin
+                                    ).Unit
+
+                                    -- fire multiple pellets like a shotgun
+                                    for i = 1, pellets do
+                                        -- random spread
+                                        local rand = Vector3.new(
+                                            (math.random() - 0.5) * spread,
+                                            (math.random() - 0.5) * spread,
+                                            (math.random() - 0.5) * spread
+                                        )
+
+                                        -- final pellet direction
+                                        local pelletDir = (baseDir + rand).Unit
+
+                                        local targetPoint = origin
+                                            + (pelletDir * 50)
+
+                                        local args = {
+                                            {
+                                                AttackInfo = {
+                                                    AttackIndex = 0,
+                                                    ComboIndex = 0,
+                                                },
+                                                WorldTargetPoint = vector.create(
+                                                    targetPoint.X,
+                                                    targetPoint.Y,
+                                                    targetPoint.Z
+                                                ),
+                                            },
+                                        }
+
+                                        ReplicatedStorage.Events['_lPJIlII']:FireServer(
+                                            unpack(args)
+                                        )
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    task.wait(0.1) -- blast every 0.1 seconds
+                end
+            end)
+        end
+    end,
+})
+
+-- Button: Fire at all parts within 100 studs
+sec:Button({
+    Title = 'Shoot at all nearby parts',
+    Callback = function()
+        local char = LocalPlayer.Character
+        if not char then
+            return
+        end
+
+        local hrp = char:FindFirstChild('HumanoidRootPart')
+        if not hrp then
+            return
+        end
+
+        local origin = hrp.Position
+        local range = 100
+
+        for _, part in ipairs(Workspace:GetDescendants()) do
+            if part:IsA('BasePart') then
+                local dist = (part.Position - origin).Magnitude
+                if dist <= range then
+                    local target = part.Position
+
+                    local args = {
+                        {
+                            AttackInfo = {
+                                AttackIndex = 0,
+                                ComboIndex = 0,
+                            },
+                            WorldTargetPoint = vector.create(
+                                target.X,
+                                target.Y,
+                                target.Z
+                            ),
+                        },
+                    }
+
+                    ReplicatedStorage.Events['_lPJIlII']:FireServer(
+                        unpack(args)
+                    )
+                end
+            end
+        end
+    end,
+})
+
+----------------------------------------------------
+-- PLAYER SECTION (RESPAWN BUTTON)
+----------------------------------------------------
+local playerSec = tab:Section({ Title = 'Player' })
+
+playerSec:Button({
+    Title = 'Respawn',
+    Callback = function()
+        ReplicatedStorage.Events.ClientSpawnRequest:FireServer()
+    end,
+})
+
+--====================================================
+--  Get Accurate World Point
+--====================================================
+local function getWorldPoint()
+    local cam = Workspace.CurrentCamera
+    if not cam then
+        return nil
+    end
+
+    local m = UserInputService:GetMouseLocation()
+    local mx, my = m.X, m.Y
+
+    local ray = cam:ScreenPointToRay(mx, my)
+    local origin = ray.Origin
+    local direction = ray.Direction * 5000
+
+    local hit = Workspace:Raycast(origin, direction)
+    if hit then
+        return hit.Position
+    end
+
+    return origin + direction
+end
+
+--====================================================
+--  CLICK HANDLER
+--====================================================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+    if not clickToFire then
+        return
+    end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+        return
+    end
+
+    local targetPos = getWorldPoint()
+    if not targetPos then
+        return
+    end
+
+    local args = {
+        {
+            AttackInfo = {
+                AttackIndex = 0,
+                ComboIndex = 0,
+            },
+            WorldTargetPoint = vector.create(
+                targetPos.X,
+                targetPos.Y,
+                targetPos.Z
+            ),
+        },
+    }
+
+    ReplicatedStorage.Events['_lPJIlII']:FireServer(unpack(args))
+end)
