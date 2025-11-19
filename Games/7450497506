@@ -1,0 +1,162 @@
+--====================================================
+--  LOAD SAGE UI
+--====================================================
+local Sage = loadstring(
+    game:HttpGet(
+        'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
+    )
+)()
+
+--====================================================
+--  SERVICES
+--====================================================
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local LocalPlayer = Players.LocalPlayer
+
+--====================================================
+--  HELPER: MOVE TO POSITION WITH DISTANCE-BASED DURATION
+--====================================================
+local function moveTo(targetPos, duration)
+    local char = LocalPlayer.Character
+    if not char then
+        return
+    end
+
+    local hrp = char:FindFirstChild('HumanoidRootPart')
+    if not hrp then
+        return
+    end
+
+    local bv = Instance.new('BodyVelocity')
+    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
+
+    local startPos = hrp.Position
+    local dist = (targetPos - startPos).Magnitude
+    local speed = dist / duration
+
+    local elapsed = 0
+    while elapsed < duration do
+        local dir = (targetPos - hrp.Position).Unit
+        bv.Velocity = dir * speed
+        elapsed += RunService.Heartbeat:Wait()
+    end
+
+    bv:Destroy()
+    hrp.CFrame = CFrame.new(targetPos)
+end
+
+--====================================================
+--  CALCULATE PER-RING DURATIONS BASED ON TOTAL TIME
+--====================================================
+local function generateDurations(ringsFolder, ringCount, totalTime)
+    local positions = {}
+
+    -- Collect ring positions
+    for i = 1, ringCount do
+        local ring = ringsFolder:FindFirstChild(tostring(i))
+        if ring then
+            positions[i] = ring.Position + Vector3.new(0, 3, 0)
+        end
+    end
+
+    -- Compute distances
+    local distances = {}
+    local totalDist = 0
+
+    for i = 2, ringCount do
+        local dist = (positions[i] - positions[i - 1]).Magnitude
+        distances[i] = dist
+        totalDist += dist
+    end
+
+    -- Convert distances into durations
+    local durations = {}
+    for i = 2, ringCount do
+        durations[i] = (distances[i] / totalDist) * totalTime
+    end
+
+    return positions, durations
+end
+
+--====================================================
+--  UI
+--====================================================
+local win = Sage:CreateWindow({
+    Title = 'How to Train your Dragon',
+    Size = Vector2.new(450, 300),
+})
+
+local tab = win:Tab({ Title = 'Controls' })
+local sec = tab:Section({ Title = 'Flight Trials' })
+
+------------------------------------------------------
+-- EASY BUTTON (46 RINGS, 36 SECONDS)
+------------------------------------------------------
+sec:Button({
+    Title = 'Valley of Wings (Easy)',
+    Callback = function()
+        task.spawn(function()
+            local folder = workspace.FlightChallenge.Challenges.Easy.Rings
+            local ringCount = 46
+            local totalTime = 36
+
+            local positions, durations =
+                generateDurations(folder, ringCount, totalTime)
+
+            for i = 1, ringCount do
+                if positions[i] then
+                    moveTo(positions[i], durations[i] or 0.1)
+                end
+            end
+        end)
+    end,
+})
+
+------------------------------------------------------
+-- MEDIUM BUTTON (42 RINGS, 33 SECONDS)
+------------------------------------------------------
+sec:Button({
+    Title = 'Boulderback Path (Medium)',
+    Callback = function()
+        task.spawn(function()
+            local folder = workspace.FlightChallenge.Challenges.Medium.Rings
+            local ringCount = 42
+            local totalTime = 33
+
+            local positions, durations =
+                generateDurations(folder, ringCount, totalTime)
+
+            for i = 1, ringCount do
+                if positions[i] then
+                    moveTo(positions[i], durations[i] or 0.1)
+                end
+            end
+        end)
+    end,
+})
+
+------------------------------------------------------
+-- HARD BUTTON (49 RINGS, 50 SECONDS)
+------------------------------------------------------
+sec:Button({
+    Title = 'Skycliff Descent (Hard)',
+    Callback = function()
+        task.spawn(function()
+            local folder = workspace.FlightChallenge.Challenges.Hard.Rings
+            local ringCount = 49
+            local totalTime = 43
+
+            local positions, durations =
+                generateDurations(folder, ringCount, totalTime)
+
+            for i = 1, ringCount do
+                if positions[i] then
+                    moveTo(positions[i], durations[i] or 0.1)
+                end
+            end
+        end)
+    end,
+})
