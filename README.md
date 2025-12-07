@@ -6,11 +6,7 @@ loadstring(
 
 # **Sage UI Library**
 
-A lightweight, animated, fantasy-themed Roblox UI framework featuring draggable windows, tabs, sections, buttons, toggles, inputs, sliders, and a CoreGui-aligned minimize system.
-
 ---
-
-## **📦 Installation**
 
 ```lua
 local Library = loadstring(game:HttpGet(
@@ -223,15 +219,5 @@ Theme = {
     Button = Color3.fromRGB(25, 15, 40),
     ToggleOn = Color3.fromRGB(150, 90, 255),
     ToggleOff = Color3.fromRGB(50, 40, 60),
-}
-```
-
----
-
-## **📜 Module Export**
-
-```lua
-return {
-    CreateWindow = Library.CreateWindow
 }
 ```
