@@ -1,0 +1,177 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VIM = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+local RANGE = 10
+
+-- Load Sage UI
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"))()
+
+-- Proper Sage usage
+local Window = Library:CreateWindow({
+    Title = "Combat Assist",
+    Size  = Vector2.new(500, 300),
+})
+
+local Tab = Window:Tab({
+    Title = "Main",
+})
+
+local Section = Tab:Section({
+    Title = "Automation",
+})
+
+local autoCombat = false
+local hbConn = nil
+
+---------------------------------------------------------------------
+-- INPUT
+---------------------------------------------------------------------
+local function PressF()
+    VIM:SendKeyEvent(true, "F", false, game)
+    task.wait(0.05)
+    VIM:SendKeyEvent(false, "F", false, game)
+end
+
+local function LeftClick()
+    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.05)
+    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+local function getRoot(m)
+    return m and m:FindFirstChild("HumanoidRootPart")
+end
+
+---------------------------------------------------------------------
+-- STATE
+---------------------------------------------------------------------
+local enemy = nil
+local attackActive = false
+local canBlockAgain = true
+local followupDeadline = 0
+
+local ATTACK_DELAY = 0.25
+local BLOCK_TIME = 0.05
+local FOLLOWUP_WINDOW = 0.5
+
+local state = "attack"
+
+---------------------------------------------------------------------
+-- MAIN LOOP
+---------------------------------------------------------------------
+local function startLoop()
+    if hbConn then hbConn:Disconnect() end
+
+    hbConn = RunService.Heartbeat:Connect(function()
+        if not autoCombat then return end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = getRoot(char)
+        if not hrp then return end
+
+        -------------------------------------------------------------
+        -- FIND TARGET
+        -------------------------------------------------------------
+        local target, status = nil, nil
+        for _, m in ipairs(workspace.Living:GetChildren()) do
+            if m ~= char and m:IsA("Model") then
+                local r = getRoot(m)
+                if r and (r.Position - hrp.Position).Magnitude <= RANGE then
+                    local st = m:FindFirstChild("Status")
+                    if st and not st:FindFirstChild("Dead") then
+                        target = m
+                        status = st
+                        break
+                    end
+                end
+            end
+        end
+
+        if not target then return end
+        enemy = target
+
+        local atkFlag = status:FindFirstChild("Attacking")
+        local enemyAtk = atkFlag and atkFlag.Value
+        local timeNow = os.clock()
+
+        -------------------------------------------------------------
+        -- RISING EDGE: enemy starts attacking
+        -------------------------------------------------------------
+        if enemyAtk and not attackActive then
+            attackActive = true
+            canBlockAgain = false
+
+            task.delay(ATTACK_DELAY, function()
+                if attackActive and autoCombat then
+                    PressF()
+                    followupDeadline = os.clock() + FOLLOWUP_WINDOW
+                    state = "waitFollow"
+                end
+            end)
+
+            return
+        end
+
+        -------------------------------------------------------------
+        -- FALLING EDGE: enemy stops attacking
+        -------------------------------------------------------------
+        if not enemyAtk and attackActive then
+            attackActive = false
+            canBlockAgain = true
+        end
+
+        -------------------------------------------------------------
+        -- FOLLOWUP WINDOW
+        -------------------------------------------------------------
+        if state == "waitFollow" then
+            if enemyAtk and canBlockAgain then
+                canBlockAgain = false
+
+                task.delay(ATTACK_DELAY, function()
+                    if attackActive and autoCombat then
+                        PressF()
+                        followupDeadline = os.clock() + FOLLOWUP_WINDOW
+                    end
+                end)
+
+                return
+            end
+
+            if timeNow >= followupDeadline then
+                state = "attack"
+            end
+
+            return
+        end
+
+        -------------------------------------------------------------
+        -- ATTACK MODE
+        -------------------------------------------------------------
+        if state == "attack" then
+            if enemyAtk then return end
+            LeftClick()
+        end
+    end)
+end
+
+---------------------------------------------------------------------
+-- SAGE UI TOGGLE (Section:Toggle from Sage.lua)
+---------------------------------------------------------------------
+Section:Toggle({
+    Title = "Auto Block + Attack",
+    Default = false,
+    Callback = function(v)
+        autoCombat = v
+        if v then
+            startLoop()
+        else
+            if hbConn then
+                hbConn:Disconnect()
+                hbConn = nil
+            end
+        end
+    end,
+})
