@@ -824,6 +824,9 @@ end
 ----------------------------------------------------------------
 -- LOADSTRING ACCESS
 ----------------------------------------------------------------
-return setmetatable({
-    CreateWindow = Library.CreateWindow,
-}, Library)
+local DefaultWindow = Library:CreateWindow({
+    Title = "Sage",
+    Size  = Vector2.new(550, 400)
+})
+
+return DefaultWindow
