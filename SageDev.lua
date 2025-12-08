@@ -370,6 +370,44 @@ function Library:CreateWindow(options)
     window.Main  = mainTab
     window.Tools = toolsTab
 
+    ------------------------------------------------------------
+    -- == AUTO-LOAD TOOLS FROM GITHUB ==
+    ------------------------------------------------------------
+    task.spawn(function()
+        local toolsIndexUrl = "https://api.github.com/repos/Pacifisity/LuaU/contents/Tools"
+        local ok, files = pcall(function()
+            return game:HttpGet(toolsIndexUrl)
+        end)
+
+        if not ok then
+            warn("Failed to fetch tools index")
+            return
+        end
+
+        local list = game.HttpService:JSONDecode(files)
+
+        for _, file in ipairs(list) do
+            if file.name:match("%.lua$") then
+                local raw = "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Tools/" .. file.name
+                task.spawn(function()
+                    local ok2, moduleSrc = pcall(function()
+                        return game:HttpGet(raw)
+                    end)
+
+                    if ok2 then
+                        local fn = loadstring(moduleSrc)
+                        if fn then
+                            -- Pass the window object to the module
+                            task.spawn(fn, window)
+                        end
+                    else
+                        warn("Failed loading tool:", file.name)
+                    end
+                end)
+            end
+        end
+    end)
+
     return window
 end
 
