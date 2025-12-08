@@ -1,0 +1,273 @@
+--============================================--
+--  SETTINGS
+--============================================--
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local gui = LocalPlayer.PlayerGui.MainGui.FORTESTER
+local remote = gui.RemoteEvent
+
+local Items = {
+    "Aqua Crystal Chunk",
+    "Bandage BoneBreak",
+    "Big Bag Fish",
+    "BladeScarp",
+    "Black Snake Fish",
+    "Black Stone",
+    "BlessingFlower",
+    "Blue Feather",
+    "Blue Flare Crystal",
+    "Blue Light Crystal",
+    "Bread Butter",
+    "Breather Gear",
+    "Breather Opal",
+    "Broken Macehand",
+    "Bronzite",
+    "Campfire Kit",
+    "Carbon",
+    "Caelurock Stone",
+    "Charcoal Sand",
+    "Cobalt",
+    "Cooked Black Snake Fish",
+    "Cooked Big Bag Fish",
+    "Cooked Meat",
+    "Cooked Moss Fish",
+    "Cooked Normal Fish",
+    "Cooked Stone Fish",
+    "CoolGrass",
+    "Copper",
+    "Coral Stone",
+    "Crystalized Magma Core",
+    "CubeStone",
+    "DeadScroom",
+    "Deep Wood Vine",
+    "Diamond",
+    "DiamondScroom",
+    "Emerald",
+    "Enchanted Black Stone",
+    "Evergold",
+    "Eye Of Golem",
+    "Fiber",
+    "FungMoss",
+    "GlowCoolGrass",
+    "Gold",
+    "GoldNugget",
+    "Golem Fragment",
+    "Grass Essence",
+    "GreatHemrat Egg",
+    "Green Flare Crystal",
+    "GreenTaite",
+    "HardenedGoldChunk",
+    "HeatedIronvale",
+    "HeatedMagmaRock",
+    "Heavy Web",
+    "HemRatEgg",
+    "Hexagon Stone",
+    "Hundred ManPin",
+    "Hyacineus Stone",
+    "Iron",
+    "Ironvale",
+    "Jelly Fish",
+    "Layered Stone",
+    "LayeredGrass Rock Stone",
+    "Long Bread",
+    "Mado Leather",
+    "MagmaCore",
+    "MagmaGolemCore",
+    "MagmaRock",
+    "Meat",
+    "MeinaEgg",
+    "M Moss Fish",
+    "Moss Stone",
+    "Moss Water Stone",
+    "MysteriousKey",
+    "Mythralite",
+    "Neon Scroom",
+    "Neri Leather",
+    "Neritantan Egg",
+    "Nickel",
+    "Nicklune",
+    "Normal Fish",
+    "Obsidian Stone",
+    "Old Scrap",
+    "Opal",
+    "Orange Coral",
+    "Pack-1",
+    "Pack-2",
+    "Pink Coral",
+    "Pink Gem",
+    "Pink Light Crystal",
+    "Pinkboom Leaf",
+    "Platinum",
+    "Prase",
+    "Pure Aqua Crystal",
+    "Pure Gold",
+    "Pure Silver",
+    "Pure Titanium",
+    "Purple Flare Crystal",
+    "Purple Iron",
+    "Purple Light Crystal",
+    "Quartz",
+    "Rare Hexagon Stone",
+    "RedMud",
+    "Relic Piece 1",
+    "Riko Bomb",
+    "RockiestEgg",
+    "Rocky Spike",
+    "Ruby Shard",
+    "Sakata Egg",
+    "Sand Crystal",
+    "Sand Gem",
+    "Sand Stone",
+    "Sand Wiggle",
+    "Sawai Leather",
+    "Seaweed",
+    "Sewed Leather",
+    "Sewed Mado Leather",
+    "Sewing thread",
+    "Silvarite",
+    "Silver",
+    "SilverNugget",
+    "Skeleton Stone",
+    "Smoky Quartz",
+    "Spider Leg",
+    "SplitJaw Fang",
+    "SplitJaw Heart",
+    "SplitJaw Leather",
+    "Spiral Ball",
+    "StandardGolemCore",
+    "Stick",
+    "Stone",
+    "Stone Fish",
+    "Stone Gem",
+    "Strange Oil",
+    "Terra Fragment",
+    "Tin",
+    "Titanor",
+    "Tree Crystal",
+    "Two-Side Obsidian Stone",
+    "UnstableMagmaCore",
+    "Voltherium",
+    "WhisWood",
+    "White Light Crystal",
+    "White Stone",
+    "Wood",
+    "WoodGem",
+    "WoodScale",
+    "WoodStone",
+    "Yellow Flare Crystal",
+    "Zuker Egg",
+    "[Relic] Golem Heart",
+    "[Relic] Unstable Magma Heart",
+    "[Relic]Blue Magnetic",
+    "[Relic]Blazeter Powder",
+    "[Relic]Luck Skeleton",
+    "[Relic]Power Skeleton",
+    "[Relic]Princess Bosom",
+    "[Relic]Ruined Iron",
+    "[Relic]Soaring Fire",
+    "[Relic]Square Liquid",
+    "[Relic]Sun share"
+}
+
+
+--============================================--
+--  LOAD SAGE UI
+--============================================--
+
+local Library = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"
+))()
+
+local Window = Library:CreateWindow({
+    Title = "Abyss Miners",
+    Size  = Vector2.new(500, 450)
+})
+
+local MainTab = Window:Tab({
+    Title = "Items"
+})
+
+--============================================--
+--  SLIDER FOR AMOUNT (TOP)
+--============================================--
+
+local AmountSection = MainTab:Section({
+    Title = "Amount"
+})
+
+local Amount = 1
+
+AmountSection:Slider({
+    Title = "Quantity",
+    Min = 1,
+    Max = 100,
+    Default = 1,
+    Callback = function(v)
+        Amount = v
+    end
+})
+
+--============================================--
+--  SEARCH
+--============================================--
+
+local SearchSection = MainTab:Section({
+    Title = "Search"
+})
+
+local SearchText = ""
+local ItemButtons = {}
+
+SearchSection:Input({
+    Title = "Filter Items",
+    Default = "",
+    Placeholder = "Type to filter...",
+    Callback = function(text)
+        SearchText = text:lower()
+
+        for itemName, btn in pairs(ItemButtons) do
+            local lowerName = itemName:lower()
+            local lowerSearch = SearchText
+
+            -- Empty search → show all
+            if lowerSearch == "" then
+                btn.Visible = true
+            else
+                -- Strict consecutive matching only
+                local match = lowerName:find(lowerSearch, 1, true)
+                btn.Visible = match ~= nil
+            end
+        end
+    end
+
+})
+
+
+
+
+--============================================--
+--  ITEMS SECTION
+--============================================--
+
+local ItemsSection = MainTab:Section({
+    Title = "Spawn Items"
+})
+
+for _, itemName in ipairs(Items) do
+    local btn = ItemsSection:Button({
+        Title = itemName,
+        Callback = function()
+            for i = 1, Amount do
+                task.wait()
+                remote:FireServer(itemName)
+            end
+        end
+    })
+
+    -- btn is the UI instance
+    print("BUTTON OBJECT:", btn, typeof(btn))
+
+    ItemButtons[itemName] = btn
+end
