@@ -363,6 +363,13 @@ function Library:CreateWindow(options)
 
     minimizeWindow()
     
+    -- Create default tabs
+    local mainTab  = window:Tab({ Title = "Main" })
+    local toolsTab = window:Tab({ Title = "Tools" })
+
+    window.Main  = mainTab
+    window.Tools = toolsTab
+
     return window
 end
 
@@ -420,12 +427,6 @@ function Window:Tab(options)
     }, Tab)
 
     table.insert(self._tabs, tab)
-
-    ------------------------------------------------------------
-    -- DEFAULT SECTIONS: Main and Tools
-    ------------------------------------------------------------
-    tab.Main  = tab:Section({ Title = "Main" })
-    tab.Tools = tab:Section({ Title = "Tools" })
 
     ------------------------------------------------------------
     -- TAB ACTIVATION / VISUAL FEEDBACK
