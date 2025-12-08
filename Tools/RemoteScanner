@@ -1,0 +1,140 @@
+-- ================================
+--  LOAD SAGE UI
+-- ================================
+local Sage = loadstring(game:HttpGet("https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"))()
+
+local window = Sage:CreateWindow({
+    Title = "Remote Detector",
+    Size  = Vector2.new(550, 400),
+})
+
+local tab = window:Tab({
+    Title = "Remotes",
+})
+
+local section = tab:Section({
+    Title = "Discovered Remotes",
+})
+
+-- ================================
+--  REMOTE SCANNER (YOUR LOGIC)
+-- ================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local Workspace = game:GetService("Workspace")
+
+local seen = {}
+local remoteButtons = {} -- track created UI buttons
+
+local function registerRemote(remote)
+    if seen[remote] then return end
+    seen[remote] = true
+
+    local fullName = remote:GetFullName()
+
+    -- Create UI button for this remote
+    remoteButtons[remote] = section:Button({
+        Title = fullName,
+        Callback = function()
+            -- ================================
+            --  SAFELY FIRE REMOTES
+            -- ================================
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer()
+            elseif remote:IsA("RemoteFunction") then
+                remote:InvokeServer()
+            end
+        end,
+    })
+end
+
+-- Shallow scan
+local function shallowScan(container)
+    if not container then return end
+    for _, child in ipairs(container:GetChildren()) do
+        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+            registerRemote(child)
+        end
+    end
+end
+
+-- Deep scan step
+local function deepScanStep(container, queue)
+    for _, child in ipairs(container:GetChildren()) do
+        if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+            registerRemote(child)
+        end
+
+        if child:IsA("Folder")
+        or child:IsA("ModuleScript")
+        or child:IsA("ScreenGui")
+        or child:IsA("LocalScript")
+        or child:IsA("Model")
+        or child:IsA("Frame")
+        then
+            table.insert(queue, child)
+        end
+    end
+end
+
+-- ================================
+--  FAST SCAN
+-- ================================
+local function fastScan()
+    shallowScan(ReplicatedStorage)
+
+    -- priority folders in ReplicatedStorage
+    local priorityNames = {
+        Modules = true,
+        Shared  = true,
+        Remotes = true,
+        Events  = true,
+    }
+
+    for name in pairs(priorityNames) do
+        local folder = ReplicatedStorage:FindFirstChild(name)
+        if folder then
+            local queue = { folder }
+            while #queue > 0 do
+                local item = table.remove(queue, 1)
+                deepScanStep(item, queue)
+            end
+        end
+    end
+
+    shallowScan(ReplicatedFirst)
+    shallowScan(LocalPlayer:FindFirstChild("PlayerGui"))
+
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    shallowScan(char)
+end
+
+-- ================================
+--  BACKGROUND SCAN (background, deep)
+-- ================================
+local function slowScan()
+    local queue = {
+        Workspace,
+        LocalPlayer:WaitForChild("PlayerGui"),
+        LocalPlayer:WaitForChild("PlayerScripts"),
+        LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait(),
+    }
+
+    task.spawn(function()
+        while #queue > 0 do
+            local container = table.remove(queue, 1)
+            deepScanStep(container, queue)
+
+            task.wait() -- prevents lag
+        end
+
+    end)
+end
+
+-- ================================
+--  RUN BOTH PHASES
+-- ================================
+fastScan()
+slowScan()
