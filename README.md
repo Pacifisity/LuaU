@@ -9,60 +9,10 @@ loadstring(
 ---
 
 ```lua
-local Library = loadstring(game:HttpGet(
+local Window = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua"
 ))()
 ```
-
----
-
-## **🚀 Quick Start**
-
-```lua
-local Window = Library:CreateWindow({
-    Title = "My Script",
-    Size = Vector2.new(500, 300)
-})
-
-local MainTab = Window:Tab({ Title = "Main" })
-local Actions = MainTab:Section({ Title = "Actions" })
-
-Actions:Button({
-    Title = "Do Something",
-    Callback = function()
-        print("Button clicked!")
-    end
-})
-
-local toggle = Actions:Toggle({
-    Title = "Auto Farm",
-    Default = false,
-    Callback = function(state)
-        print("AutoFarm =", state)
-    end
-})
-
-local input = Actions:Input({
-    Title = "Player Name",
-    Placeholder = "Enter name...",
-    Callback = function(text)
-        print("User typed:", text)
-    end
-})
-
-local slider = Actions:Slider({
-    Title = "WalkSpeed",
-    Min = 16,
-    Max = 100,
-    Default = 16,
-    Decimals = 0,
-    Callback = function(value)
-        print("Speed:", value)
-    end
-})
-```
-
----
 
 ## **🧱 UI Structure**
 
