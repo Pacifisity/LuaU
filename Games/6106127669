@@ -1,7 +1,7 @@
 --====================================================
 --  LOAD SAGE UI
 --====================================================
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -16,10 +16,6 @@ local mouse = LocalPlayer:GetMouse()
 -- =====================================================
 -- UI SETUP
 -- =====================================================
-local win = Sage:CreateWindow({
-    Title = 'Merging Game',
-    Size = Vector2.new(450, 300),
-})
 
 local tab = win:Tab({ Title = 'Spawner' })
 local sec = tab:Section({ Title = 'Controls' })
