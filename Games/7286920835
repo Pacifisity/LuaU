@@ -1,6 +1,6 @@
 -- https://www.roblox.com/games/88193275790771
 
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -23,10 +23,6 @@ local prestigeEvent = net:WaitForChild('Prestige')
 -------------------------------------------------------------------
 -- WINDOW
 -------------------------------------------------------------------
-local win = Sage:CreateWindow({
-    Title = 'Develop Game Spammer',
-    Size = Vector2.new(500, 300),
-})
 
 local tab = win:Tab({ Title = 'Tools' })
 local sec = tab:Section({ Title = 'Automation' })
