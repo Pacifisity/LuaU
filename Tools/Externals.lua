@@ -1,7 +1,4 @@
 return function(window)
-
-    print("TEST TOOL LOADED")
-
     -- make sure Tools tab exists
     if not window.Tools then
         warn("NO Tools TAB FOUND IN WINDOW")
