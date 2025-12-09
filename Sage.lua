@@ -9,7 +9,7 @@ local Players = game:GetService('Players')
 local TweenService = game:GetService('TweenService')
 
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
-local PlayerGui = LocalPlayer:WaitForChild('PlayerGui', 10)
+local CoreGui = game:GetService("CoreGui")
 
 -----------------------------
 -- == THEME (Fantasy Black/Purple) ==
@@ -106,7 +106,7 @@ function Library:CreateWindow(options)
     gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-    gui.Parent = PlayerGui
+    gui.Parent = CoreGui
 
     ------------------------------------------------------------
     -- MAIN WINDOW
