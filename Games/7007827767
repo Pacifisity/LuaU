@@ -3,7 +3,7 @@
 --====================================================
 --  LOAD SAGE UI
 --====================================================
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -66,10 +66,6 @@ local aimbotEnabled = false -- controlled by UI toggle
 --====================================================
 --  UI: COMBAT TAB / AIMBOT + ESP CONTROLS
 --====================================================
-local win = Sage:CreateWindow({
-    Title = 'Prisoner Life',
-    Size = Vector2.new(500, 300),
-})
 
 local tab = win:Tab({
     Title = 'Combat',
