@@ -12,8 +12,6 @@ return function(window)
         Title = "Visuals"
     })
 
-    print("Aimbot Loaded → Visuals Section")
-
     ------------------------------------------------------------
     -- INTERNAL STATE (no globals, fully local)
     ------------------------------------------------------------
