@@ -1,7 +1,7 @@
 --====================================================
 --  LOAD SAGE UI
 --====================================================
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -23,10 +23,6 @@ local autoFirePlayers = false -- NEW TOGGLE
 --====================================================
 --  UI
 --====================================================
-local win = Sage:CreateWindow({
-    Title = 'Smooth Slicing',
-    Size = Vector2.new(450, 250),
-})
 
 local tab = win:Tab({ Title = 'Controls' })
 
