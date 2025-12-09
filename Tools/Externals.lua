@@ -10,16 +10,16 @@ return function(window)
 
     -- create a section
     local section = window.Tools:Section({
-        Title = "TEST SECTION"
+        Title = "Externals"
     })
 
     print("SECTION CREATED:", section)
 
     -- add a button
     section:Button({
-        Title = "Test Button",
+        Title = "Infinite Yield",
         Callback = function()
-            print("Test Button Pressed")
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
         end
     })
 end
