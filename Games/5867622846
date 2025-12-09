@@ -176,14 +176,9 @@ local Items = {
 --  LOAD SAGE UI
 --============================================--
 
-local Library = loadstring(game:HttpGet(
+local Window = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"
 ))()
-
-local Window = Library:CreateWindow({
-    Title = "Abyss Miners",
-    Size  = Vector2.new(500, 450)
-})
 
 local MainTab = Window:Tab({
     Title = "Items"
