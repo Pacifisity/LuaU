@@ -1,7 +1,7 @@
 --====================================================
 --  LOAD SAGE UI
 --====================================================
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -84,10 +84,6 @@ end
 --====================================================
 --  UI
 --====================================================
-local win = Sage:CreateWindow({
-    Title = 'How to Train your Dragon',
-    Size = Vector2.new(450, 300),
-})
 
 local tab = win:Tab({ Title = 'Controls' })
 local sec = tab:Section({ Title = 'Flight Trials' })
