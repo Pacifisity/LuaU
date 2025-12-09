@@ -376,8 +376,6 @@ function Library:CreateWindow(options)
     task.spawn(function()
         local HttpService = game:GetService("HttpService")
 
-        print("\n=== TOOL LOADER START ===")
-
         ------------------------------------------------------------
         -- Wait for Tools tab to actually exist (prevents race issues)
         ------------------------------------------------------------
@@ -387,13 +385,10 @@ function Library:CreateWindow(options)
         -- 1. Get file list from Tools folder
         ------------------------------------------------------------
         local api = "https://api.github.com/repos/Pacifisity/LuaU/contents/Tools"
-        print("REQUESTING:", api)
 
         local okList, list = pcall(function()
             return HttpService:JSONDecode(game:HttpGet(api))
         end)
-
-        print("API RESULT:", okList, typeof(list))
 
         if not okList then
             warn("Failed to list tools:", list)
@@ -404,7 +399,6 @@ function Library:CreateWindow(options)
         -- 2. Iterate through items
         ------------------------------------------------------------
         for _, item in ipairs(list) do
-            print("FOUND:", item.name, "| type:", item.type)
 
             if item.type == "file" and item.name:match("%.lua$") then
                 
@@ -412,13 +406,10 @@ function Library:CreateWindow(options)
                 -- Build RAW URL + Fetch
                 ------------------------------------------------------------
                 local raw = "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Tools/" .. item.name
-                print(" → RAW URL:", raw)
 
                 local okRaw, src = pcall(function()
                     return game:HttpGet(raw)
                 end)
-
-                print("   RAW FETCH:", okRaw, src and #src)
 
                 if not okRaw then
                     warn("Cannot fetch:", raw)
@@ -433,8 +424,6 @@ function Library:CreateWindow(options)
                     warn("loadstring ERROR for", item.name, ":", loadErr)
                     continue
                 end
-
-                print("   COMPILED:", item.name)
 
                 ------------------------------------------------------------
                 -- Run chunk at top-level to obtain returned function
@@ -464,20 +453,11 @@ function Library:CreateWindow(options)
 
                 if not okRun then
                     warn("TOOL RUNTIME ERROR in", item.name, ":", runErr)
-                else
-                    print("   TOOL EXECUTED:", item.name)
                 end
-
-            else
-                print("   SKIPPED:", item.name)
             end
         end
-
-        print("=== TOOL LOADER END ===\n")
     end)
-
-
-
+    
     return window
 end
 
