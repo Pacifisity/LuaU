@@ -10,7 +10,7 @@ loadstring(
 
 ```lua
 local Library = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/<yourname>/<repo>/main/Sage.lua"
+    "https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua"
 ))()
 ```
 
