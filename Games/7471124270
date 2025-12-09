@@ -1,6 +1,6 @@
 -- https://www.roblox.com/games/77742675853993
 
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         'https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua'
     )
@@ -163,9 +163,6 @@ end
 -------------------------------------------------------
 -- MAIN WINDOW
 -------------------------------------------------------
-local win = Sage:CreateWindow({
-    Title = 'Least Sinful Priest',
-})
 
 local tab = win:Tab({
     Title = 'Features',
