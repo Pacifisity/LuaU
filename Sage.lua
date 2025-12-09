@@ -360,9 +360,124 @@ function Library:CreateWindow(options)
 
         gui:Destroy()
     end)
+    
+    -- Create default tabs
+    local mainTab  = window:Tab({ Title = "Main" })
+    local toolsTab = window:Tab({ Title = "Tools" })
+
+    window.Main  = mainTab
+    window.Tools = toolsTab
 
     minimizeWindow()
-    
+
+    ------------------------------------------------------------
+    -- == AUTO-LOAD TOOLS FROM GITHUB ==
+    ------------------------------------------------------------
+    task.spawn(function()
+        local HttpService = game:GetService("HttpService")
+
+        print("\n=== TOOL LOADER START ===")
+
+        ------------------------------------------------------------
+        -- Wait for Tools tab to actually exist (prevents race issues)
+        ------------------------------------------------------------
+        repeat task.wait() until window.Tools
+
+        ------------------------------------------------------------
+        -- 1. Get file list from Tools folder
+        ------------------------------------------------------------
+        local api = "https://api.github.com/repos/Pacifisity/LuaU/contents/Tools"
+        print("REQUESTING:", api)
+
+        local okList, list = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(api))
+        end)
+
+        print("API RESULT:", okList, typeof(list))
+
+        if not okList then
+            warn("Failed to list tools:", list)
+            return
+        end
+
+        ------------------------------------------------------------
+        -- 2. Iterate through items
+        ------------------------------------------------------------
+        for _, item in ipairs(list) do
+            print("FOUND:", item.name, "| type:", item.type)
+
+            if item.type == "file" and item.name:match("%.lua$") then
+                
+                ------------------------------------------------------------
+                -- Build RAW URL + Fetch
+                ------------------------------------------------------------
+                local raw = "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Tools/" .. item.name
+                print(" → RAW URL:", raw)
+
+                local okRaw, src = pcall(function()
+                    return game:HttpGet(raw)
+                end)
+
+                print("   RAW FETCH:", okRaw, src and #src)
+
+                if not okRaw then
+                    warn("Cannot fetch:", raw)
+                    continue
+                end
+
+                ------------------------------------------------------------
+                -- Compile Lua chunk
+                ------------------------------------------------------------
+                local chunk, loadErr = loadstring(src)
+                if not chunk then
+                    warn("loadstring ERROR for", item.name, ":", loadErr)
+                    continue
+                end
+
+                print("   COMPILED:", item.name)
+
+                ------------------------------------------------------------
+                -- Run chunk at top-level to obtain returned function
+                ------------------------------------------------------------
+                local okModule, toolFuncOrErr = pcall(chunk)
+                if not okModule then
+                    warn("MODULE ERROR in", item.name, ":", toolFuncOrErr)
+                    continue
+                end
+
+                ------------------------------------------------------------
+                -- Ensure the tool returned a function
+                ------------------------------------------------------------
+                if type(toolFuncOrErr) ~= "function" then
+                    warn("Tool", item.name, "did not return a function")
+                    continue
+                end
+
+                local toolFunc = toolFuncOrErr
+
+                ------------------------------------------------------------
+                -- Execute tool function with the window
+                ------------------------------------------------------------
+                local okRun, runErr = pcall(function()
+                    toolFunc(window)
+                end)
+
+                if not okRun then
+                    warn("TOOL RUNTIME ERROR in", item.name, ":", runErr)
+                else
+                    print("   TOOL EXECUTED:", item.name)
+                end
+
+            else
+                print("   SKIPPED:", item.name)
+            end
+        end
+
+        print("=== TOOL LOADER END ===\n")
+    end)
+
+
+
     return window
 end
 
@@ -817,6 +932,9 @@ end
 ----------------------------------------------------------------
 -- LOADSTRING ACCESS
 ----------------------------------------------------------------
-return setmetatable({
-    CreateWindow = Library.CreateWindow,
-}, Library)
+local DefaultWindow = Library:CreateWindow({
+    Title = "Sage",
+    Size  = Vector2.new(550, 400)
+})
+
+return DefaultWindow
