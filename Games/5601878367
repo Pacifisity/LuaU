@@ -1,7 +1,7 @@
 -- https://www.roblox.com/games/16228276182
 
 -- Load UI Library from GitHub
-local Sage = loadstring(
+local win = loadstring(
     game:HttpGet(
         "https://raw.githubusercontent.com/Pacifisity/LuaU/refs/heads/main/Sage.lua"
     )
@@ -22,10 +22,6 @@ local MeteorsFolder = workspace:WaitForChild("Map"):WaitForChild("Meteors")
 ---------------------------------------------------------------------
 -- CREATE UI WINDOW
 ---------------------------------------------------------------------
-local win = Sage:CreateWindow({
-    Title = "Meteor Control",
-    Size = Vector2.new(500, 300),
-})
 
 local tab = win:Tab({ Title = "Meteor Detector" })
 local sec = tab:Section({ Title = "Controls" })
