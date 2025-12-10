@@ -1,25 +1,30 @@
-return function(Window)
+return function(Sage)
 
-    if not Window.Tools then
+    if not Sage.Tools then
         warn("NO Tools TAB FOUND IN WINDOW")
         return
     end
 
-    -- VISUALS SECTION -----------------------------------
-    local section = Window.Tools:Section({
-        Title = "Visuals"
-    })
+    ------------------------------------------------------
+    -- UI
+    ------------------------------------------------------
+    local section = Sage.Tools:Section({ Title = "Visuals" })
 
-    -- INTERNAL STATE ------------------------------------
+    ------------------------------------------------------
+    -- INTERNAL STATE
+    ------------------------------------------------------
     local running = false
     local renderConn = nil
     local updateThread = nil
 
     local currentTarget = nil
     local currentAimPart = nil
-    local aimbotStrength = 10
+    local aimbotStrength = 5
+    local isRMB = false
 
-    -- SERVICES ------------------------------------------
+    ------------------------------------------------------
+    -- SERVICES
+    ------------------------------------------------------
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
@@ -28,77 +33,152 @@ return function(Window)
     local LocalPlayer = Players.LocalPlayer
     local Camera = Workspace.CurrentCamera
 
-    local REFRESH_RATE = 0.12
-    local AIM_FOV = 200
+    ------------------------------------------------------
+    -- CONSTANTS
+    ------------------------------------------------------
+    local REFRESH_RATE = 0.15
+    local AIM_FOV = 150
 
-    local isRMB = false
-    local visiblePlayers = {}
+    ------------------------------------------------------
+    -- CHARACTER TRACKING / CACHING
+    ------------------------------------------------------
+    local trackedCharacters = {}
+    local cachedParts = {}
 
-    -- VISIBILITY ----------------------------------------
+    local function cacheModelParts(model)
+        local parts = {}
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                parts[#parts+1] = obj
+            end
+        end
+        cachedParts[model] = parts
+    end
+
+    local function registerCharacter(model)
+        if trackedCharacters[model] then return end
+        if model == LocalPlayer.Character then return end
+        if not model:FindFirstChildOfClass("Humanoid") then return end
+
+        trackedCharacters[model] = true
+        cacheModelParts(model)
+
+        model.DescendantAdded:Connect(function(obj)
+            if obj:IsA("BasePart") then
+                table.insert(cachedParts[model], obj)
+            end
+        end)
+
+        model.DescendantRemoving:Connect(function(obj)
+            if obj:IsA("BasePart") then
+                local list = cachedParts[model]
+                for i = #list, 1, -1 do
+                    if list[i] == obj then
+                        table.remove(list, i)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+
+    Workspace.ChildAdded:Connect(registerCharacter)
+    for _, child in ipairs(Workspace:GetChildren()) do
+        registerCharacter(child)
+    end
+
+    Workspace.ChildRemoved:Connect(function(model)
+        trackedCharacters[model] = nil
+        cachedParts[model] = nil
+    end)
+
+    ------------------------------------------------------
+    -- VISIBILITY CHECK
+    ------------------------------------------------------
     local function isPartVisible(part)
-        if not part or not part:IsA("BasePart") then return false end
+        if not (part and part:IsA("BasePart")) then return false end
 
         local origin = Camera.CFrame.Position
-        local direction = (part.Position - origin)
+        local dir = part.Position - origin
 
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Blacklist
         params.FilterDescendantsInstances = {
-            LocalPlayer.Character,
-            part.Parent, -- ignore entire enemy body so accessories don't block
+            LocalPlayer.Character, part.Parent
         }
 
-        local result = Workspace:Raycast(origin, direction, params)
-        
-        -- Ray hits NOTHING → assumed visible  
-        if not result then return true end
-
-        -- If ray hit something from *inside the enemy model*, treat as visible  
-        return result.Instance:IsDescendantOf(part.Parent)
+        local result = Workspace:Raycast(origin, dir, params)
+        return not result or result.Instance:IsDescendantOf(part.Parent)
     end
 
+    ------------------------------------------------------
+    -- BODY PART PRIORITY
+    ------------------------------------------------------
+    local BODY_PRIORITY = {
+        Head = 1,
+        UpperTorso = 2, Torso = 2,
+        HumanoidRootPart = 3,
+        LowerTorso = 4,
+        LeftUpperArm = 5, RightUpperArm = 5,
+        LeftLowerArm = 6, RightLowerArm = 6,
+        LeftHand = 7, RightHand = 7,
+        LeftUpperLeg = 8, RightUpperLeg = 8,
+        LeftLowerLeg = 9, RightLowerLeg = 9,
+        LeftFoot = 10, RightFoot = 10,
+    }
 
-    -- AIM PRIORITY --------------------------------------
-    local function getPreferredAimPart(character)
-        local head = character:FindFirstChild("Head")
-        if head and isPartVisible(head) then return head end
+    local function findBestBodyPart(model)
+        local parts = cachedParts[model]
+        if not parts then return nil end
 
-        local chest = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-        if chest and isPartVisible(chest) then return chest end
+        local best = nil
+        local bestScore = math.huge
 
-        local root = character:FindFirstChild("HumanoidRootPart")
-        if root and isPartVisible(root) then return root end
+        for _, part in ipairs(parts) do
+            local score = BODY_PRIORITY[part.Name]
+            if score and score < bestScore and isPartVisible(part) then
+                bestScore = score
+                best = part
+            end
+        end
 
-        return nil
+        return best
     end
 
-    -- UPDATE VISIBILITY ---------------------------------
-    local function updateVisiblePlayers()
-        visiblePlayers = {}
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local p = getPreferredAimPart(plr.Character)
-                if p then
-                    visiblePlayers[plr] = p
-                end
+    ------------------------------------------------------
+    -- TARGET REFRESH
+    ------------------------------------------------------
+    local visibleTargets = {}
+
+    local function updateVisibleTargets()
+        visibleTargets = {}
+        for model in pairs(trackedCharacters) do
+            local best = findBestBodyPart(model)
+            if best then
+                visibleTargets[model] = best
             end
         end
     end
 
-    -- FIND CLOSEST --------------------------------------
+    ------------------------------------------------------
+    -- GET CLOSEST TARGET
+    ------------------------------------------------------
     local function getClosestTarget()
         local closest = nil
         local bestDist = AIM_FOV
 
-        for plr, part in pairs(visiblePlayers) do
+        local center = Vector2.new(
+            Camera.ViewportSize.X/2,
+            Camera.ViewportSize.Y/2
+        )
+
+        for model, part in pairs(visibleTargets) do
             local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
             if onScreen then
-                local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
                 local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-
                 if dist < bestDist then
                     bestDist = dist
-                    closest = plr
+                    closest = model
                 end
             end
         end
@@ -106,47 +186,61 @@ return function(Window)
         return closest
     end
 
-    -- TARGET LOCK ---------------------------------------
+    ------------------------------------------------------
+    -- TARGET ACQUISITION
+    ------------------------------------------------------
     local function acquireTarget()
-        local newTarget = getClosestTarget()
+        local new = getClosestTarget()
 
-        if newTarget ~= currentTarget then
-            currentTarget = newTarget
-
-            if currentTarget and currentTarget.Character then
-                currentAimPart = getPreferredAimPart(currentTarget.Character)
-            else
-                currentAimPart = nil
+        if new ~= currentTarget then
+            currentTarget = new
+            currentAimPart = new and findBestBodyPart(new) or nil
+        else
+            if currentTarget and (not currentAimPart or not isPartVisible(currentAimPart)) then
+                currentAimPart = findBestBodyPart(currentTarget)
             end
         end
     end
 
-    -- SMOOTH AIM ----------------------------------------
-    local function smoothAim(fromCF, toPos, strength)
-        local alpha = (strength / 10) ^ 3   -- cubic curve
-        alpha = math.clamp(alpha, 0.01, 1) -- extremely soft at low strength
+    ------------------------------------------------------
+    -- AIM WITH MOUSE MOVEMENT  (NEW LOGIC)
+    ------------------------------------------------------
+    local function aimAtWorldPosition(worldPos, strength)
+        local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+        if not onScreen then return end
 
-        local targetCF = CFrame.new(fromCF.Position, toPos)
-        return fromCF:Lerp(targetCF, alpha)
+        local cx = Camera.ViewportSize.X / 2
+        local cy = Camera.ViewportSize.Y / 2
+
+        local dx = (screenPos.X - cx)
+        local dy = (screenPos.Y - cy)
+
+        -- nonlinear falloff for smoothness
+        local alpha = (strength / 10) ^ 3
+
+        mousemoverel(dx * alpha, dy * alpha)
     end
 
-
-    -- INPUT HOOKS ---------------------------------------
-    UserInputService.InputBegan:Connect(function(i, gp)
-        if not gp and i.UserInputType == Enum.UserInputType.MouseButton2 then
+    ------------------------------------------------------
+    -- INPUT HOOKS
+    ------------------------------------------------------
+    UserInputService.InputBegan:Connect(function(input, gp)
+        if not gp and input.UserInputType == Enum.UserInputType.MouseButton2 then
             isRMB = true
         end
     end)
 
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton2 then
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then
             isRMB = false
             currentTarget = nil
             currentAimPart = nil
         end
     end)
 
-    -- TOGGLE --------------------------------------------
+    ------------------------------------------------------
+    -- UI TOGGLE
+    ------------------------------------------------------
     section:Toggle({
         Title = "Aimbot (Hold Right-Click)",
         Default = false,
@@ -157,7 +251,7 @@ return function(Window)
 
                 updateThread = task.spawn(function()
                     while running do
-                        updateVisiblePlayers()
+                        updateVisibleTargets()
                         task.wait(REFRESH_RATE)
                     end
                 end)
@@ -166,8 +260,7 @@ return function(Window)
                     if running and isRMB then
                         acquireTarget()
                         if currentAimPart then
-                            local pos = currentAimPart.Position
-                            Camera.CFrame = smoothAim(Camera.CFrame, pos, aimbotStrength)
+                            aimAtWorldPosition(currentAimPart.Position, aimbotStrength)
                         end
                     end
                 end)
@@ -185,13 +278,14 @@ return function(Window)
         end
     })
 
-    -- SLIDER --------------------------------------------
+    ------------------------------------------------------
+    -- STRENGTH SLIDER
+    ------------------------------------------------------
     section:Slider({
         Title = "Aimbot Strength",
         Min = 1,
         Max = 10,
-        Default = 10,
-
+        Default = 5,
         Callback = function(v)
             aimbotStrength = v
         end
