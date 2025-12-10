@@ -7,7 +7,7 @@ return function(Window)
 
     -- VISUALS SECTION -----------------------------------
     local section = Window.Tools:Section({
-        Title = "Visuals [Dev]"
+        Title = "Visuals"
     })
 
     -- INTERNAL STATE ------------------------------------
