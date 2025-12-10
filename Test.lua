@@ -2,9 +2,7 @@
 --  SAGE UI TESTS
 -- ======================================================
 
-local Sage = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"
-))()
+local Sage = loadstring(game:HttpGet("https://raw.githubusercontent.com/Pacifisity/LuaU/main/Sage.lua"))()
 
 if not Sage or not Sage.Tools then
     warn("[Sage Tester] UI failed to load.")
