@@ -285,7 +285,7 @@ return function(Sage)
     -- UI TOGGLE
     ------------------------------------------------------
     section:Toggle({
-        Title = "Aimbot (Hold Right-Click)",
+        Title = "Aimbot",
         Default = false,
 
         Callback = function(state)
@@ -331,7 +331,7 @@ return function(Sage)
     -- STRENGTH SLIDER
     ------------------------------------------------------
     section:Slider({
-        Title = "Aimbot Strength",
+        Title = "Strength",
         Min = 1,
         Max = 10,
         Default = 5,
