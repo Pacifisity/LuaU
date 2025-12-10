@@ -1,152 +1,160 @@
-return function(window)
+return function(Window)
 
-    if not window.Tools then
+    if not Window.Tools then
         warn("NO Tools TAB FOUND IN WINDOW")
         return
     end
 
-    ------------------------------------------------------------
-    -- CREATE VISUALS SECTION
-    ------------------------------------------------------------
-    local section = window.Tools:Section({
-        Title = "Visuals"
+    -- VISUALS SECTION -----------------------------------
+    local section = Window.Tools:Section({
+        Title = "Visuals [Dev]"
     })
 
-    ------------------------------------------------------------
-    -- INTERNAL STATE (no globals, fully local)
-    ------------------------------------------------------------
+    -- INTERNAL STATE ------------------------------------
     local running = false
-    local updateThread = nil
     local renderConn = nil
+    local updateThread = nil
 
-    ------------------------------------------------------------
-    -- TOGGLE
-    ------------------------------------------------------------
+    local currentTarget = nil
+    local currentAimPart = nil
+    local aimbotStrength = 10
+
+    -- SERVICES ------------------------------------------
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local Workspace = game:GetService("Workspace")
+
+    local LocalPlayer = Players.LocalPlayer
+    local Camera = Workspace.CurrentCamera
+
+    local REFRESH_RATE = 0.12
+    local AIM_FOV = 200
+
+    local isRMB = false
+    local visiblePlayers = {}
+
+    -- VISIBILITY ----------------------------------------
+    local function isPartVisible(part)
+        if not part or not part:IsA("BasePart") then return false end
+
+        local origin = Camera.CFrame.Position
+        local direction = (part.Position - origin)
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {
+            LocalPlayer.Character,
+            part.Parent, -- ignore entire enemy body so accessories don't block
+        }
+
+        local result = Workspace:Raycast(origin, direction, params)
+        
+        -- Ray hits NOTHING → assumed visible  
+        if not result then return true end
+
+        -- If ray hit something from *inside the enemy model*, treat as visible  
+        return result.Instance:IsDescendantOf(part.Parent)
+    end
+
+
+    -- AIM PRIORITY --------------------------------------
+    local function getPreferredAimPart(character)
+        local head = character:FindFirstChild("Head")
+        if head and isPartVisible(head) then return head end
+
+        local chest = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+        if chest and isPartVisible(chest) then return chest end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root and isPartVisible(root) then return root end
+
+        return nil
+    end
+
+    -- UPDATE VISIBILITY ---------------------------------
+    local function updateVisiblePlayers()
+        visiblePlayers = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local p = getPreferredAimPart(plr.Character)
+                if p then
+                    visiblePlayers[plr] = p
+                end
+            end
+        end
+    end
+
+    -- FIND CLOSEST --------------------------------------
+    local function getClosestTarget()
+        local closest = nil
+        local bestDist = AIM_FOV
+
+        for plr, part in pairs(visiblePlayers) do
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+
+                if dist < bestDist then
+                    bestDist = dist
+                    closest = plr
+                end
+            end
+        end
+
+        return closest
+    end
+
+    -- TARGET LOCK ---------------------------------------
+    local function acquireTarget()
+        local newTarget = getClosestTarget()
+
+        if newTarget ~= currentTarget then
+            currentTarget = newTarget
+
+            if currentTarget and currentTarget.Character then
+                currentAimPart = getPreferredAimPart(currentTarget.Character)
+            else
+                currentAimPart = nil
+            end
+        end
+    end
+
+    -- SMOOTH AIM ----------------------------------------
+    local function smoothAim(fromCF, toPos, strength)
+        local alpha = (strength / 10) ^ 3   -- cubic curve
+        alpha = math.clamp(alpha, 0.01, 1) -- extremely soft at low strength
+
+        local targetCF = CFrame.new(fromCF.Position, toPos)
+        return fromCF:Lerp(targetCF, alpha)
+    end
+
+
+    -- INPUT HOOKS ---------------------------------------
+    UserInputService.InputBegan:Connect(function(i, gp)
+        if not gp and i.UserInputType == Enum.UserInputType.MouseButton2 then
+            isRMB = true
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton2 then
+            isRMB = false
+            currentTarget = nil
+            currentAimPart = nil
+        end
+    end)
+
+    -- TOGGLE --------------------------------------------
     section:Toggle({
         Title = "Aimbot (Hold Right-Click)",
         Default = false,
 
         Callback = function(state)
             if state then
-                ------------------------------------------------------------
-                -- START AIMBOT
-                ------------------------------------------------------------
                 running = true
 
-                local Players = game:GetService("Players")
-                local RunService = game:GetService("RunService")
-                local UserInputService = game:GetService("UserInputService")
-                local Workspace = game:GetService("Workspace")
-
-                local LocalPlayer = Players.LocalPlayer
-                local Camera = Workspace.CurrentCamera
-
-                local REFRESH_RATE = 0.1
-                local SCREEN_CENTER_RADIUS = 150
-
-                local visiblePlayers = {}
-                local isHoldingRightClick = false
-
-                ------------------------------------------------------------
-                -- VISIBILITY CHECKS
-                ------------------------------------------------------------
-                local function isPartVisible(part)
-                    if not part or not part:IsA("BasePart") then return false end
-                    local origin = Camera.CFrame.Position
-                    local direction = part.Position - origin
-
-                    local params = RaycastParams.new()
-                    params.FilterType = Enum.RaycastFilterType.Blacklist
-                    params.FilterDescendantsInstances = { LocalPlayer.Character }
-
-                    local result = Workspace:Raycast(origin, direction, params)
-                    if not result then return true end
-
-                    return result.Instance == part
-                end
-
-                local function getVisibleParts(character)
-                    local t = {}
-                    for _, p in ipairs(character:GetDescendants()) do
-                        if p:IsA("BasePart") and isPartVisible(p) then
-                            t[#t+1] = p
-                        end
-                    end
-                    return t
-                end
-
-                local function getAimPart(character)
-                    local visible = getVisibleParts(character)
-                    if #visible == 0 then return nil end
-
-                    local head = character:FindFirstChild("Head")
-                    local chest = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-
-                    if head and table.find(visible, head) then return head end
-                    if chest and table.find(visible, chest) then return chest end
-                    return visible[math.random(1, #visible)]
-                end
-
-                local function getPartPosition(part)
-                    if part:IsA("BasePart") then return part.Position end
-                    if part:IsA("Model") then return part:GetPivot().Position end
-                end
-
-                local function updateVisiblePlayers()
-                    visiblePlayers = {}
-                    for _, plr in ipairs(Players:GetPlayers()) do
-                        if plr ~= LocalPlayer and plr.Character then
-                            if #getVisibleParts(plr.Character) > 0 then
-                                visiblePlayers[plr] = true
-                            end
-                        end
-                    end
-                end
-
-                local function getClosestVisiblePlayer()
-                    local shortest = SCREEN_CENTER_RADIUS
-                    local closest = nil
-
-                    for plr in pairs(visiblePlayers) do
-                        local aim = getAimPart(plr.Character)
-                        if aim then
-                            local pos = getPartPosition(aim)
-                            if pos then
-                                local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
-                                if onScreen then
-                                    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-                                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-
-                                    if dist < shortest then
-                                        shortest = dist
-                                        closest = plr
-                                    end
-                                end
-                            end
-                        end
-                    end
-
-                    return closest
-                end
-
-                ------------------------------------------------------------
-                -- INPUT HOOK
-                ------------------------------------------------------------
-                UserInputService.InputBegan:Connect(function(i, gp)
-                    if not gp and i.UserInputType == Enum.UserInputType.MouseButton2 then
-                        isHoldingRightClick = true
-                    end
-                end)
-
-                UserInputService.InputEnded:Connect(function(i)
-                    if i.UserInputType == Enum.UserInputType.MouseButton2 then
-                        isHoldingRightClick = false
-                    end
-                end)
-
-                ------------------------------------------------------------
-                -- BACKGROUND LOOP
-                ------------------------------------------------------------
                 updateThread = task.spawn(function()
                     while running do
                         updateVisiblePlayers()
@@ -154,35 +162,38 @@ return function(window)
                     end
                 end)
 
-                ------------------------------------------------------------
-                -- CAMERA AIM LOOP
-                ------------------------------------------------------------
                 renderConn = RunService.RenderStepped:Connect(function()
-                    if not running or not isHoldingRightClick then return end
-
-                    local target = getClosestVisiblePlayer()
-                    if target and target.Character then
-                        local aimPart = getAimPart(target.Character)
-                        if aimPart then
-                            local pos = getPartPosition(aimPart)
-                            if pos then
-                                Camera.CFrame = CFrame.new(Camera.CFrame.Position, pos)
-                            end
+                    if running and isRMB then
+                        acquireTarget()
+                        if currentAimPart then
+                            local pos = currentAimPart.Position
+                            Camera.CFrame = smoothAim(Camera.CFrame, pos, aimbotStrength)
                         end
                     end
                 end)
 
             else
-                ------------------------------------------------------------
-                -- STOP AIMBOT
-                ------------------------------------------------------------
                 running = false
+                currentTarget = nil
+                currentAimPart = nil
 
                 if renderConn then
                     renderConn:Disconnect()
                     renderConn = nil
                 end
             end
+        end
+    })
+
+    -- SLIDER --------------------------------------------
+    section:Slider({
+        Title = "Aimbot Strength",
+        Min = 1,
+        Max = 10,
+        Default = 10,
+
+        Callback = function(v)
+            aimbotStrength = v
         end
     })
 
