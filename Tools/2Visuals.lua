@@ -14,7 +14,7 @@ return function(Sage)
     ------------------------------------------------------
     -- UI SECTION
     ------------------------------------------------------
-    local section = Sage.Tools:Section({ Title = "Aimbot" })
+    local section = Sage.Tools:Section({ Title = "Visuals" })
 
     ------------------------------------------------------
     -- INTERNAL STATE
@@ -28,22 +28,22 @@ return function(Sage)
     local currentPart   = nil
     local strength      = 5
 
-    local aimProgress   = 0
-    local lastDX        = 0
-    local lastDY        = 0
+    -- Smooth (aim velocity) storage
+    local lastMoveX     = 0
+    local lastMoveY     = 0
 
     ------------------------------------------------------
     -- CONSTANTS
     ------------------------------------------------------
-    local REFRESH_RATE = 0.10
+    local REFRESH_RATE = 0.08
     local AIM_FOV      = 200
     local MAX_DIST     = 1500
-    local MAX_STEP     = 15
-    local AIM_RAMP     = 0.12
-    local ANGLE_SMOOTH = 0.35   -- NEW: angular smoothing factor
+    local MAX_JUMP     = 40          -- maximum mouse move per frame
+    local SMOOTH_K     = 0.18        -- proportional aim factor
+    local SMOOTH_BLEND = 0.35        -- directional smoothing factor
 
     ------------------------------------------------------
-    -- INPUT
+    -- RMB INPUT
     ------------------------------------------------------
     UserInputService.InputBegan:Connect(function(i, gp)
         if gp then return end
@@ -55,15 +55,17 @@ return function(Sage)
     UserInputService.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton2 then
             isRMB = false
-            currentPart = nil
-            aimProgress = 0
+            currentTarget = nil
+            currentPart   = nil
+            lastMoveX     = 0
+            lastMoveY     = 0
         end
     end)
 
     ------------------------------------------------------
     -- VISIBILITY CHECK
     ------------------------------------------------------
-    local function isVisible(part, char)
+    local function isVisible(part, character)
         if not part then return false end
 
         local origin = Camera.CFrame.Position
@@ -72,21 +74,18 @@ return function(Sage)
 
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Blacklist
-        params.FilterDescendantsInstances = { LocalPlayer.Character, char }
+        params.FilterDescendantsInstances = {
+            LocalPlayer.Character,
+            character
+        }
 
         return Workspace:Raycast(origin, dir, params) == nil
     end
 
     ------------------------------------------------------
-    -- VISIBLE PART PRIORITY
+    -- BEST VISIBLE PART
     ------------------------------------------------------
-    local function findStableVisiblePart(char, oldPart)
-        -- First try to KEEP the same part if still visible
-        if oldPart and isVisible(oldPart, char) then
-            return oldPart
-        end
-
-        -- Otherwise choose best new part
+    local function getBestPart(char)
         local head  = char:FindFirstChild("Head")
         local chest = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
         local root  = char:FindFirstChild("HumanoidRootPart")
@@ -94,7 +93,6 @@ return function(Sage)
         if head and isVisible(head, char) then return head end
         if chest and isVisible(chest, char) then return chest end
         if root and isVisible(root, char) then return root end
-
         return nil
     end
 
@@ -102,12 +100,13 @@ return function(Sage)
     -- TARGET SELECTION
     ------------------------------------------------------
     local function selectTarget()
-        local oldTarget = currentTarget
-
         currentTarget = nil
         currentPart   = nil
 
-        local screenCenter = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        if not LocalPlayer or not LocalPlayer.Character then return end
+        if not Camera then Camera = Workspace.CurrentCamera end
+
+        local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         local bestScore = math.huge
 
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -117,13 +116,14 @@ return function(Sage)
                     local hum = char:FindFirstChildOfClass("Humanoid")
                     if hum and hum.Health > 0 then
 
-                        local part = findStableVisiblePart(char, currentTarget == char and currentPart or nil)
+                        local part = getBestPart(char)
                         if part then
-                            local pos, onscreen = Camera:WorldToViewportPoint(part.Position)
-                            if onscreen then
+                            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                            if onScreen then
                                 local dist2d = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
+
                                 if dist2d < AIM_FOV and dist2d < bestScore then
-                                    bestScore = dist2d
+                                    bestScore    = dist2d
                                     currentTarget = char
                                     currentPart   = part
                                 end
@@ -134,51 +134,53 @@ return function(Sage)
                 end
             end
         end
-
-        -- Smooth aim only resets when TARGET changes, NOT part
-        if currentTarget ~= oldTarget then
-            aimProgress = 0
-        end
     end
 
     ------------------------------------------------------
-    -- AIMING
+    -- TRUE TRACKING AIMING
     ------------------------------------------------------
     local function aimAt(worldPos)
         local pos, onScreen = Camera:WorldToViewportPoint(worldPos)
         if not onScreen then return end
 
-        local cx = Camera.ViewportSize.X/2
-        local cy = Camera.ViewportSize.Y/2
+        local cx = Camera.ViewportSize.X / 2
+        local cy = Camera.ViewportSize.Y / 2
 
+        -- Error signal (distance from crosshair)
         local dx = pos.X - cx
         local dy = pos.Y - cy
 
-        -- Smooth aim strength ramp
-        aimProgress = math.clamp(aimProgress + AIM_RAMP, 0, 1)
-        local alpha = ((strength / 10) ^ 3) * aimProgress
+        ------------------------------------------------------
+        -- PROPORTIONAL AIM CONTROLLER
+        -- Smoothly reduces error until it reaches EXACT zero.
+        ------------------------------------------------------
+        local k = (strength / 10) * SMOOTH_K
+        local moveX = dx * k
+        local moveY = dy * k
 
-        dx *= alpha
-        dy *= alpha
+        ------------------------------------------------------
+        -- DIRECTIONAL SMOOTHING
+        -- Prevents flicking by blending old and new directions.
+        ------------------------------------------------------
+        moveX = lastMoveX + (moveX - lastMoveX) * SMOOTH_BLEND
+        moveY = lastMoveY + (moveY - lastMoveY) * SMOOTH_BLEND
 
-        -- Angular smoothing: lerp movement direction
-        dx = lastDX + (dx - lastDX) * ANGLE_SMOOTH
-        dy = lastDY + (dy - lastDY) * ANGLE_SMOOTH
+        lastMoveX, lastMoveY = moveX, moveY
 
-        lastDX, lastDY = dx, dy
+        ------------------------------------------------------
+        -- SAFETY CLAMP (only to prevent insane values)
+        ------------------------------------------------------
+        moveX = math.clamp(moveX, -MAX_JUMP, MAX_JUMP)
+        moveY = math.clamp(moveY, -MAX_JUMP, MAX_JUMP)
 
-        -- Hard clamp step
-        dx = math.clamp(dx, -MAX_STEP, MAX_STEP)
-        dy = math.clamp(dy, -MAX_STEP, MAX_STEP)
-
-        mousemoverel(dx, dy)
+        mousemoverel(moveX, moveY)
     end
 
     ------------------------------------------------------
-    -- TOGGLE
+    -- UI TOGGLE
     ------------------------------------------------------
     section:Toggle({
-        Title = "Enable",
+        Title = "Aimbot",
         Default = false,
 
         Callback = function(state)
@@ -190,8 +192,10 @@ return function(Sage)
                         if isRMB then
                             selectTarget()
                         else
-                            currentPart = nil
-                            aimProgress = 0
+                            currentTarget = nil
+                            currentPart   = nil
+                            lastMoveX     = 0
+                            lastMoveY     = 0
                         end
                         task.wait(REFRESH_RATE)
                     end
@@ -218,4 +222,5 @@ return function(Sage)
             strength = v
         end
     })
+
 end
