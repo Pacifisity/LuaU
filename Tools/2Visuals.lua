@@ -1,5 +1,4 @@
 return function(Sage)
-
     if not Sage.Tools then
         warn("NO Tools TAB FOUND IN WINDOW")
         return
@@ -13,68 +12,90 @@ return function(Sage)
     ------------------------------------------------------
     -- INTERNAL STATE
     ------------------------------------------------------
-    local running = false
-    local renderConn = nil
-    local updateThread = nil
+    local running        = false
+    local renderConn     = nil
+    local updateThread   = nil
+    local isRMB          = false
 
-    local currentTarget = nil
+    local currentTarget  = nil
     local currentAimPart = nil
     local aimbotStrength = 5
-    local isRMB = false
 
     ------------------------------------------------------
     -- SERVICES
     ------------------------------------------------------
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
+    local Players          = game:GetService("Players")
+    local RunService       = game:GetService("RunService")
     local UserInputService = game:GetService("UserInputService")
-    local Workspace = game:GetService("Workspace")
+    local Workspace        = game:GetService("Workspace")
 
-    local LocalPlayer = Players.LocalPlayer
-    local Camera = Workspace.CurrentCamera
+    local LocalPlayer      = Players.LocalPlayer
+    local Camera           = Workspace.CurrentCamera
 
     ------------------------------------------------------
     -- CONSTANTS
     ------------------------------------------------------
     local REFRESH_RATE = 0.15
-    local AIM_FOV = 150
+    local AIM_FOV      = 150
 
     ------------------------------------------------------
-    -- CHARACTER TRACKING / CACHING
+    -- TRACKED CHARACTERS
     ------------------------------------------------------
     local trackedCharacters = {}
-    local cachedParts = {}
+    local cachedParts       = {}
+
+    ------------------------------------------------------
+    -- UTILS
+    ------------------------------------------------------
+    local function findHumanoid(model)
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("Humanoid") then
+                return d
+            end
+        end
+        return nil
+    end
+
+    local function isAlive(model)
+        local h = findHumanoid(model)
+        return h and h.Health > 0
+    end
 
     local function cacheModelParts(model)
         local parts = {}
-        for _, obj in ipairs(model:GetDescendants()) do
-            if obj:IsA("BasePart") then
-                parts[#parts+1] = obj
+        for _, d in ipairs(model:GetDescendants()) do
+            if d:IsA("BasePart") then
+                parts[#parts + 1] = d
             end
         end
         cachedParts[model] = parts
     end
 
+    ------------------------------------------------------
+    -- CHARACTER REGISTRATION
+    ------------------------------------------------------
     local function registerCharacter(model)
         if trackedCharacters[model] then return end
         if model == LocalPlayer.Character then return end
-        if not model:FindFirstChildOfClass("Humanoid") then return end
+        if not model:IsA("Model") then return end
+
+        local humanoid = findHumanoid(model)
+        if not humanoid then return end
 
         trackedCharacters[model] = true
         cacheModelParts(model)
 
         model.DescendantAdded:Connect(function(obj)
-            if obj:IsA("BasePart") then
+            if obj:IsA("BasePart") and cachedParts[model] then
                 table.insert(cachedParts[model], obj)
             end
         end)
 
         model.DescendantRemoving:Connect(function(obj)
-            if obj:IsA("BasePart") then
-                local list = cachedParts[model]
-                for i = #list, 1, -1 do
-                    if list[i] == obj then
-                        table.remove(list, i)
+            if obj:IsA("BasePart") and cachedParts[model] then
+                for i = #cachedParts[model], 1, -1 do
+                    if cachedParts[model][i] == obj then
+                        table.remove(cachedParts[model], i)
                         break
                     end
                 end
@@ -82,37 +103,55 @@ return function(Sage)
         end)
     end
 
-    Workspace.ChildAdded:Connect(registerCharacter)
-    for _, child in ipairs(Workspace:GetChildren()) do
-        registerCharacter(child)
+    -- Recursive workspace scan
+    local function deepScan(root)
+        for _, obj in ipairs(root:GetChildren()) do
+            if obj:IsA("Model") then
+                registerCharacter(obj)
+            end
+            deepScan(obj)
+        end
     end
 
-    Workspace.ChildRemoved:Connect(function(model)
+    deepScan(Workspace)
+
+    Workspace.DescendantAdded:Connect(function(obj)
+        if obj:IsA("Model") then
+            registerCharacter(obj)
+        end
+    end)
+
+    Workspace.DescendantRemoving:Connect(function(model)
         trackedCharacters[model] = nil
-        cachedParts[model] = nil
+        cachedParts[model]      = nil
     end)
 
     ------------------------------------------------------
-    -- VISIBILITY CHECK
+    -- VISIBILITY
     ------------------------------------------------------
     local function isPartVisible(part)
         if not (part and part:IsA("BasePart")) then return false end
 
+        local model = part:FindFirstAncestorOfClass("Model")
+        if not model then return false end
+        if not isAlive(model) then return false end
+
         local origin = Camera.CFrame.Position
-        local dir = part.Position - origin
+        local dir    = part.Position - origin
 
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Blacklist
         params.FilterDescendantsInstances = {
-            LocalPlayer.Character, part.Parent
+            LocalPlayer.Character,
+            model
         }
 
-        local result = Workspace:Raycast(origin, dir, params)
-        return not result or result.Instance:IsDescendantOf(part.Parent)
+        local hit = Workspace:Raycast(origin, dir, params)
+        return hit == nil
     end
 
     ------------------------------------------------------
-    -- BODY PART PRIORITY
+    -- PRIORITY
     ------------------------------------------------------
     local BODY_PRIORITY = {
         Head = 1,
@@ -128,68 +167,74 @@ return function(Sage)
     }
 
     local function findBestBodyPart(model)
+        if not isAlive(model) then return nil end
+
         local parts = cachedParts[model]
         if not parts then return nil end
 
-        local best = nil
         local bestScore = math.huge
+        local bestPart  = nil
 
         for _, part in ipairs(parts) do
             local score = BODY_PRIORITY[part.Name]
             if score and score < bestScore and isPartVisible(part) then
                 bestScore = score
-                best = part
+                bestPart  = part
             end
         end
 
-        return best
+        return bestPart
     end
 
     ------------------------------------------------------
-    -- TARGET REFRESH
+    -- TARGETING
     ------------------------------------------------------
     local visibleTargets = {}
 
     local function updateVisibleTargets()
         visibleTargets = {}
         for model in pairs(trackedCharacters) do
-            local best = findBestBodyPart(model)
-            if best then
-                visibleTargets[model] = best
+            if isAlive(model) then
+                local part = findBestBodyPart(model)
+                if part then
+                    visibleTargets[model] = part
+                end
+            else
+                if currentTarget == model then
+                    currentTarget = nil
+                    currentAimPart = nil
+                end
             end
         end
     end
 
-    ------------------------------------------------------
-    -- GET CLOSEST TARGET
-    ------------------------------------------------------
     local function getClosestTarget()
-        local closest = nil
-        local bestDist = AIM_FOV
+        local bestModel = nil
+        local bestDist  = AIM_FOV
 
-        local center = Vector2.new(
-            Camera.ViewportSize.X/2,
-            Camera.ViewportSize.Y/2
-        )
+        local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
 
         for model, part in pairs(visibleTargets) do
-            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-            if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+            local pos, visible = Camera:WorldToViewportPoint(part.Position)
+            if visible then
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
                 if dist < bestDist then
                     bestDist = dist
-                    closest = model
+                    bestModel = model
                 end
             end
         end
 
-        return closest
+        return bestModel
     end
 
-    ------------------------------------------------------
-    -- TARGET ACQUISITION
-    ------------------------------------------------------
     local function acquireTarget()
+        if currentTarget and not isAlive(currentTarget) then
+            currentTarget = nil
+            currentAimPart = nil
+            return
+        end
+
         local new = getClosestTarget()
 
         if new ~= currentTarget then
@@ -203,35 +248,33 @@ return function(Sage)
     end
 
     ------------------------------------------------------
-    -- AIM WITH MOUSE MOVEMENT  (NEW LOGIC)
+    -- AIM (mouse)
     ------------------------------------------------------
     local function aimAtWorldPosition(worldPos, strength)
         local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
         if not onScreen then return end
 
-        local cx = Camera.ViewportSize.X / 2
-        local cy = Camera.ViewportSize.Y / 2
+        local cx = Camera.ViewportSize.X/2
+        local cy = Camera.ViewportSize.Y/2
 
-        local dx = (screenPos.X - cx)
-        local dy = (screenPos.Y - cy)
+        local dx = screenPos.X - cx
+        local dy = screenPos.Y - cy
 
-        -- nonlinear falloff for smoothness
         local alpha = (strength / 10) ^ 3
-
         mousemoverel(dx * alpha, dy * alpha)
     end
 
     ------------------------------------------------------
-    -- INPUT HOOKS
+    -- INPUT
     ------------------------------------------------------
-    UserInputService.InputBegan:Connect(function(input, gp)
-        if not gp and input.UserInputType == Enum.UserInputType.MouseButton2 then
+    UserInputService.InputBegan:Connect(function(i, gp)
+        if not gp and i.UserInputType == Enum.UserInputType.MouseButton2 then
             isRMB = true
         end
     end)
 
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton2 then
             isRMB = false
             currentTarget = nil
             currentAimPart = nil
@@ -258,7 +301,15 @@ return function(Sage)
 
                 renderConn = RunService.RenderStepped:Connect(function()
                     if running and isRMB then
+
+                        if currentTarget and not isAlive(currentTarget) then
+                            currentTarget = nil
+                            currentAimPart = nil
+                            return
+                        end
+
                         acquireTarget()
+
                         if currentAimPart then
                             aimAtWorldPosition(currentAimPart.Position, aimbotStrength)
                         end
@@ -270,10 +321,8 @@ return function(Sage)
                 currentTarget = nil
                 currentAimPart = nil
 
-                if renderConn then
-                    renderConn:Disconnect()
-                    renderConn = nil
-                end
+                if renderConn then renderConn:Disconnect() end
+                renderConn = nil
             end
         end
     })
