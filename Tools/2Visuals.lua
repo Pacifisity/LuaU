@@ -28,7 +28,6 @@ return function(Sage)
     local currentPart   = nil
     local strength      = 5
 
-    -- Smooth (aim velocity) storage
     local lastMoveX     = 0
     local lastMoveY     = 0
 
@@ -38,12 +37,12 @@ return function(Sage)
     local REFRESH_RATE = 0.08
     local AIM_FOV      = 200
     local MAX_DIST     = 1500
-    local MAX_JUMP     = 40          -- maximum mouse move per frame
-    local SMOOTH_K     = 0.18        -- proportional aim factor
-    local SMOOTH_BLEND = 0.35        -- directional smoothing factor
+    local MAX_JUMP     = 40
+    local SMOOTH_K     = 0.18
+    local SMOOTH_BLEND = 0.35
 
     ------------------------------------------------------
-    -- RMB INPUT
+    -- INPUT
     ------------------------------------------------------
     UserInputService.InputBegan:Connect(function(i, gp)
         if gp then return end
@@ -63,81 +62,100 @@ return function(Sage)
     end)
 
     ------------------------------------------------------
-    -- VISIBILITY CHECK
+    -- BEST PART SELECTION (whitelist raycasts into humanoid)
     ------------------------------------------------------
-    local function isVisible(part, character)
-        if not part then return false end
+    local function getBestPartFromRay(char)
+        if not char then return nil end
 
-        local origin = Camera.CFrame.Position
-        local dir    = part.Position - origin
-        if dir.Magnitude > MAX_DIST then return false end
-
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Blacklist
-        params.FilterDescendantsInstances = {
-            LocalPlayer.Character,
-            character
+        local candidates = {
+            char:FindFirstChild("Head"),
+            char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"),
+            char:FindFirstChild("HumanoidRootPart")
         }
 
-        return Workspace:Raycast(origin, dir, params) == nil
-    end
+        local origin = Camera.CFrame.Position
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Whitelist
+        params.FilterDescendantsInstances = { char }
 
-    ------------------------------------------------------
-    -- BEST VISIBLE PART
-    ------------------------------------------------------
-    local function getBestPart(char)
-        local head  = char:FindFirstChild("Head")
-        local chest = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
-        local root  = char:FindFirstChild("HumanoidRootPart")
+        for _, part in ipairs(candidates) do
+            if part then
+                local result = Workspace:Raycast(origin, part.Position - origin, params)
+                if result and result.Instance and result.Instance:IsDescendantOf(char) then
+                    return part
+                end
+            end
+        end
 
-        if head and isVisible(head, char) then return head end
-        if chest and isVisible(chest, char) then return chest end
-        if root and isVisible(root, char) then return root end
         return nil
     end
 
     ------------------------------------------------------
-    -- TARGET SELECTION
+    -- TARGET VALIDITY CHECK
     ------------------------------------------------------
-    local function selectTarget()
-        currentTarget = nil
-        currentPart   = nil
-
-        if not LocalPlayer or not LocalPlayer.Character then return end
-        if not Camera then Camera = Workspace.CurrentCamera end
-
-        local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        local bestScore = math.huge
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local char = plr.Character
-                if char then
-                    local hum = char:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-
-                        local part = getBestPart(char)
-                        if part then
-                            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
-                            if onScreen then
-                                local dist2d = (Vector2.new(pos.X, pos.Y) - screenCenter).Magnitude
-
-                                if dist2d < AIM_FOV and dist2d < bestScore then
-                                    bestScore    = dist2d
-                                    currentTarget = char
-                                    currentPart   = part
-                                end
-                            end
-                        end
-
-                    end
-                end
-            end
+    local function targetStillValid()
+        if not currentTarget or not currentPart then
+            return false
         end
+
+        local hum = currentTarget:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then
+            return false
+        end
+
+        if not currentPart.Parent then
+            return false
+        end
+
+        local pos, onScreen = Camera:WorldToViewportPoint(currentPart.Position)
+        if not onScreen then
+            return false
+        end
+
+        return true
     end
 
     ------------------------------------------------------
-    -- TRUE TRACKING AIMING
+    -- TARGET SELECTION (crosshair-only locking)
+    ------------------------------------------------------
+    local function selectTarget()
+        -- Do not change once locked unless invalid
+        if currentTarget and currentPart then
+            return
+        end
+
+        if not isRMB then
+            return
+        end
+
+        local origin = Camera.CFrame.Position
+        local direction = Camera.CFrame.LookVector * MAX_DIST
+
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = { LocalPlayer.Character }
+
+        local result = Workspace:Raycast(origin, direction, params)
+        if not result then return end
+
+        local hit = result.Instance
+        if not hit then return end
+
+        local model = hit:FindFirstAncestorOfClass("Model")
+        if not model then return end
+
+        local hum = model:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local best = getBestPartFromRay(model)
+        if not best then return end
+
+        currentTarget = model
+        currentPart   = best
+    end
+
+    ------------------------------------------------------
+    -- AIM FUNCTION
     ------------------------------------------------------
     local function aimAt(worldPos)
         local pos, onScreen = Camera:WorldToViewportPoint(worldPos)
@@ -146,30 +164,18 @@ return function(Sage)
         local cx = Camera.ViewportSize.X / 2
         local cy = Camera.ViewportSize.Y / 2
 
-        -- Error signal (distance from crosshair)
         local dx = pos.X - cx
         local dy = pos.Y - cy
 
-        ------------------------------------------------------
-        -- PROPORTIONAL AIM CONTROLLER
-        -- Smoothly reduces error until it reaches EXACT zero.
-        ------------------------------------------------------
         local k = (strength / 10) * SMOOTH_K
         local moveX = dx * k
         local moveY = dy * k
 
-        ------------------------------------------------------
-        -- DIRECTIONAL SMOOTHING
-        -- Prevents flicking by blending old and new directions.
-        ------------------------------------------------------
         moveX = lastMoveX + (moveX - lastMoveX) * SMOOTH_BLEND
         moveY = lastMoveY + (moveY - lastMoveY) * SMOOTH_BLEND
 
         lastMoveX, lastMoveY = moveX, moveY
 
-        ------------------------------------------------------
-        -- SAFETY CLAMP (only to prevent insane values)
-        ------------------------------------------------------
         moveX = math.clamp(moveX, -MAX_JUMP, MAX_JUMP)
         moveY = math.clamp(moveY, -MAX_JUMP, MAX_JUMP)
 
@@ -190,20 +196,40 @@ return function(Sage)
                 updateThread = task.spawn(function()
                     while running do
                         if isRMB then
-                            selectTarget()
+                            -- If target is invalid, clear → allow new lock
+                            if currentTarget and not targetStillValid() then
+                                currentTarget = nil
+                                currentPart   = nil
+                                lastMoveX     = 0
+                                lastMoveY     = 0
+                            end
+
+                            if not currentTarget then
+                                selectTarget()
+                            end
                         else
                             currentTarget = nil
                             currentPart   = nil
                             lastMoveX     = 0
                             lastMoveY     = 0
                         end
+
                         task.wait(REFRESH_RATE)
                     end
                 end)
 
                 renderConn = RunService.RenderStepped:Connect(function()
                     if running and isRMB and currentPart then
-                        aimAt(currentPart.Position)
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(currentPart.Position)
+                        if onScreen then
+                            local dx = screenPos.X - Camera.ViewportSize.X/2
+                            local dy = screenPos.Y - Camera.ViewportSize.Y/2
+                            local dist = math.sqrt(dx*dx + dy*dy)
+
+                            if dist <= AIM_FOV then
+                                aimAt(currentPart.Position)
+                            end
+                        end
                     end
                 end)
             end
@@ -222,5 +248,4 @@ return function(Sage)
             strength = v
         end
     })
-
 end
